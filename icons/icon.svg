@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ЭлектроПлан">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset=".55" stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".72" cy=".18" r=".55">
+      <stop offset="0" stop-color="#93c5fd" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#93c5fd" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="bolt-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#020617" flood-opacity=".4"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+  <g fill="none" stroke="#93c5fd" stroke-opacity=".3" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M92 388h74l42-42"/>
+    <path d="M420 124h-70l-38 38"/>
+  </g>
+  <g fill="#93c5fd" fill-opacity=".55">
+    <circle cx="92" cy="388" r="11"/>
+    <circle cx="420" cy="124" r="11"/>
+  </g>
+  <path filter="url(#bolt-shadow)" d="M278.5 106 158.5 271h90l-15 135 120-180h-90l15-120Z" fill="#f8fafc"/>
+</svg>

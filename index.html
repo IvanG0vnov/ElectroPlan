@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="ЭлектроПлан — рисование электрического плана дома и расчёт длины кабеля по сечениям. Работает офлайн на ПК и Android.">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="application-name" content="ЭлектроПлан">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ЭлектроПлан">
+  <title>ЭлектроПлан — план дома и расчёт кабеля</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell" id="appShell">
+    <header class="topbar">
+      <div class="brand">
+        <button class="icon-btn mobile-only" type="button" id="leftPanelBtn" aria-label="Открыть инструменты">
+          <span data-icon="menu"></span>
+        </button>
+        <div class="brand-mark" aria-hidden="true"><span data-icon="bolt"></span></div>
+        <div class="brand-copy">
+          <strong>ЭлектроПлан</strong>
+          <small>план дома · кабель</small>
+        </div>
+      </div>
+
+      <button class="project-switcher" type="button" id="projectOpenBtn" title="Открыть список проектов">
+        <span class="project-switcher-label">Проект</span>
+        <strong id="topProjectName">Загрузка…</strong>
+        <span class="chevron" data-icon="chevron"></span>
+      </button>
+
+      <div class="save-state" id="saveState">
+        <span class="save-dot" id="saveDot"></span>
+        <span id="saveStateText">Сохранено</span>
+      </div>
+
+      <div class="top-actions">
+        <div class="history-buttons">
+          <button class="icon-btn" type="button" id="undoBtn" title="Отменить (Ctrl+Z)" aria-label="Отменить">
+            <span data-icon="undo"></span>
+          </button>
+          <button class="icon-btn" type="button" id="redoBtn" title="Повторить (Ctrl+Y)" aria-label="Повторить">
+            <span data-icon="redo"></span>
+          </button>
+        </div>
+        <span class="top-divider"></span>
+        <button class="btn btn-ghost desktop-only" type="button" id="settingsBtn">
+          <span data-icon="settings"></span> Настройки
+        </button>
+        <button class="btn btn-primary" type="button" id="reportBtn">
+          <span data-icon="report"></span> <span class="desktop-only">Отчёт</span>
+        </button>
+        <button class="icon-btn" type="button" id="helpBtn" title="Как пользоваться" aria-label="Как пользоваться">
+          <span data-icon="help"></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="left-panel" id="leftPanel" aria-label="Инструменты и устройства">
+        <div class="side-head">
+          <div>
+            <span class="eyebrow">Рабочая область</span>
+            <h2>Инструменты</h2>
+          </div>
+          <button class="icon-btn mobile-only" type="button" id="leftCloseBtn" aria-label="Закрыть панель">
+            <span data-icon="close"></span>
+          </button>
+        </div>
+
+        <div class="side-scroll">
+          <section class="side-section">
+            <div class="side-section-title">Черчение</div>
+            <div class="tool-grid" id="toolPalette"></div>
+          </section>
+
+          <section class="side-section">
+            <div class="side-section-title">Устройства</div>
+            <div class="device-grid" id="devicePalette"></div>
+            <p class="side-hint">Выберите устройство и нажмите на план. Высота установки подставится автоматически.</p>
+          </section>
+
+          <section class="side-section floor-section">
+            <div class="side-section-title">Этажи</div>
+            <div class="floor-list" id="floorList"></div>
+          </section>
+        </div>
+
+        <div class="side-foot">
+          <span class="storage-badge" id="storageBadge">Локальное хранение</span>
+          <button class="text-btn" type="button" id="helpBtnSide">
+            <span data-icon="help"></span> Подсказки и горячие клавиши
+          </button>
+        </div>
+      </aside>
+
+      <button class="panel-backdrop" type="button" id="panelBackdrop" aria-label="Закрыть панели" hidden></button>
+
+      <section class="canvas-area" aria-label="План этажа">
+        <div class="canvas-topbar">
+          <div class="floor-chip" id="floorChip">
+            <span data-icon="layers"></span>
+            <span id="activeFloorName">1 этаж</span>
+          </div>
+          <div class="canvas-controls">
+            <button class="icon-btn canvas-control" type="button" id="zoomOutBtn" title="Уменьшить" aria-label="Уменьшить масштаб">
+              <span data-icon="zoomOut"></span>
+            </button>
+            <button class="zoom-label" type="button" id="zoomResetBtn" title="Сбросить масштаб">80 px/м</button>
+            <button class="icon-btn canvas-control" type="button" id="zoomInBtn" title="Увеличить" aria-label="Увеличить масштаб">
+              <span data-icon="zoomIn"></span>
+            </button>
+            <span class="control-divider"></span>
+            <button class="icon-btn canvas-control" type="button" id="fitBtn" title="Показать весь план" aria-label="Показать весь план">
+              <span data-icon="fit"></span>
+            </button>
+            <button class="icon-btn canvas-control" type="button" id="gridBtn" title="Показать или скрыть сетку" aria-label="Показать или скрыть сетку">
+              <span data-icon="grid"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="planCanvas" tabindex="0" aria-label="Холст плана. Колесо мыши — масштаб, перетаскивание фона — панорама."></canvas>
+
+          <div class="empty-hint" id="emptyHint" hidden>
+            <div class="empty-hint-icon"><span data-icon="wall"></span></div>
+            <h3>Начните с контура дома</h3>
+            <p>Нарисуйте стены, добавьте комнаты, затем расставьте устройства и проложите трассы кабеля.</p>
+            <div class="empty-hint-actions">
+              <button class="btn btn-primary btn-sm" type="button" data-action="start-wall">
+                <span data-icon="wall"></span> Рисовать стену
+              </button>
+              <button class="btn btn-soft btn-sm" type="button" data-action="open-demo">
+                Открыть пример
+              </button>
+            </div>
+          </div>
+
+          <div class="draw-hint" id="drawHint" hidden>
+            <div class="draw-hint-copy">
+              <strong id="drawHintTitle">Стена</strong>
+              <span id="drawHintText">Укажите начало и конец стены.</span>
+            </div>
+            <div class="draw-hint-actions">
+              <button class="btn btn-primary btn-sm" type="button" id="finishDraftBtn">Завершить</button>
+              <button class="btn btn-ghost btn-sm" type="button" id="cancelDraftBtn">Отмена</button>
+            </div>
+          </div>
+
+          <div class="touch-tip mobile-only" id="touchTip">
+            <span>Два пальца — масштаб и панорама</span>
+          </div>
+        </div>
+
+        <footer class="statusbar">
+          <span class="cursor-readout" id="cursorReadout">X: — · Y: —</span>
+          <span class="status-divider"></span>
+          <span class="tool-hint" id="toolHint">Выбирайте объекты на плане. Колесо мыши — масштаб.</span>
+          <span class="status-spacer"></span>
+          <span class="route-status" id="routeStatus"></span>
+          <span class="status-divider desktop-only"></span>
+          <span class="zoom-status desktop-only" id="zoomStatus">Масштаб 80 px/м</span>
+        </footer>
+
+        <nav class="mobile-dock" id="mobileDock" aria-label="Быстрые инструменты">
+          <button class="dock-btn active" type="button" data-tool="select"><span data-icon="select"></span><small>Выбор</small></button>
+          <button class="dock-btn" type="button" data-tool="wall"><span data-icon="wall"></span><small>Стена</small></button>
+          <button class="dock-btn" type="button" data-tool="room"><span data-icon="room"></span><small>Комната</small></button>
+          <button class="dock-btn" type="button" data-tool="cable"><span data-icon="cable"></span><small>Кабель</small></button>
+          <button class="dock-btn" type="button" id="mobileDevicesBtn"><span data-icon="plug"></span><small>Устройства</small></button>
+          <button class="dock-btn" type="button" id="mobileInspectorBtn"><span data-icon="settings"></span><small>Свойства</small></button>
+          <button class="dock-btn" type="button" id="mobileSummaryBtn"><span data-icon="report"></span><small>Смета</small></button>
+        </nav>
+      </section>
+
+      <aside class="right-panel" id="rightPanel" aria-label="Свойства и смета">
+        <div class="side-head right-mobile-head">
+          <div>
+            <span class="eyebrow">Инспектор</span>
+            <h2 id="rightPanelTitle">Свойства</h2>
+          </div>
+          <button class="icon-btn mobile-only" type="button" id="rightCloseBtn" aria-label="Закрыть панель">
+            <span data-icon="close"></span>
+          </button>
+        </div>
+        <div class="panel-tabs" role="tablist">
+          <button class="panel-tab active" type="button" id="propertiesTab" data-tab="properties" role="tab" aria-selected="true">Свойства</button>
+          <button class="panel-tab" type="button" id="summaryTab" data-tab="summary" role="tab" aria-selected="false">
+            Смета <span class="tab-badge" id="summaryBadge">0 м</span>
+          </button>
+        </div>
+        <div class="right-scroll">
+          <div id="propertiesPanel" role="tabpanel" aria-labelledby="propertiesTab"></div>
+          <div id="summaryPanel" role="tabpanel" aria-labelledby="summaryTab" hidden></div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <dialog class="modal" id="projectsDialog">
+    <div class="modal-card projects-modal">
+      <header class="modal-head">
+        <div>
+          <span class="eyebrow">Библиотека</span>
+          <h2>Мои проекты</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-dialog aria-label="Закрыть">
+          <span data-icon="close"></span>
+        </button>
+      </header>
+      <div class="modal-body">
+        <form class="new-project-form" id="newProjectForm">
+          <label class="field">
+            <span>Название нового проекта</span>
+            <input id="newProjectName" maxlength="80" placeholder="Например, Квартира на Ленина" required>
+          </label>
+          <button class="btn btn-primary" type="submit"><span data-icon="plus"></span> Создать</button>
+        </form>
+        <div class="modal-toolbar">
+          <button class="btn btn-soft btn-sm" type="button" id="importProjectBtn"><span data-icon="upload"></span> Загрузить JSON</button>
+          <button class="btn btn-soft btn-sm" type="button" id="openDemoBtn"><span data-icon="bolt"></span> Демо-план</button>
+          <span class="toolbar-note">Проекты хранятся только на этом устройстве</span>
+        </div>
+        <div class="project-list" id="projectsList"></div>
+      </div>
+      <footer class="modal-foot">
+        <span class="storage-badge" id="storageBadgeDialog">Локальное хранение</span>
+        <button class="btn btn-soft btn-sm" type="button" id="exportCurrentBtn"><span data-icon="download"></span> Сохранить текущий в файл</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog class="modal" id="helpDialog">
+    <div class="modal-card help-modal">
+      <header class="modal-head">
+        <div>
+          <span class="eyebrow">Руководство</span>
+          <h2>Как работает ЭлектроПлан</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-dialog aria-label="Закрыть">
+          <span data-icon="close"></span>
+        </button>
+      </header>
+      <div class="modal-body help-body">
+        <div class="help-steps">
+          <article class="help-step">
+            <span class="help-step-number">01</span>
+            <div><h3>Нарисуйте дом</h3><p>Инструмент «Стена» — два клика. «Комната» — обведите контур по углам и нажмите «Завершить» или дважды кликните. Всё привязывается к сетке.</p></div>
+          </article>
+          <article class="help-step">
+            <span class="help-step-number">02</span>
+            <div><h3>Расставьте электрику</h3><p>Выберите розетку, выключатель, светильник или щит в левой панели и нажмите на план. Высоту установки можно изменить в свойствах.</p></div>
+          </article>
+          <article class="help-step">
+            <span class="help-step-number">03</span>
+            <div><h3>Проложите трассы</h3><p>Инструмент «Кабель»: начните у устройства, добавьте изгибы, завершите у второго устройства. Двойной клик по готовой трассе добавляет точку.</p></div>
+          </article>
+          <article class="help-step">
+            <span class="help-step-number">04</span>
+            <div><h3>Получите смету</h3><p>Зайдите во вкладку «Смета», проверьте итоги по сечениям и нажмите «Отчёт PDF» или «CSV». Перед покупкой уточните длины по месту.</p></div>
+          </article>
+        </div>
+        <div class="help-grid">
+          <section>
+            <h3>Управление</h3>
+            <dl class="shortcut-list">
+              <div><dt>Колесо мыши</dt><dd>масштаб</dd></div>
+              <div><dt>Перетаскивание фона</dt><dd>панорама</dd></div>
+              <div><dt>Shift при рисовании</dt><dd>ровно по оси</dd></div>
+              <div><dt>Двойной клик / Enter</dt><dd>завершить комнату или трассу</dd></div>
+              <div><dt>Ctrl + Z / Ctrl + Y</dt><dd>отменить / повторить</dd></div>
+              <div><dt>Delete</dt><dd>удалить выбранное</dd></div>
+            </dl>
+          </section>
+          <section>
+            <h3>Данные и установка</h3>
+            <p>Проект автоматически сохраняется в браузере. Для переноса на другое устройство скачайте файл проекта и загрузите его через «Мои проекты».</p>
+            <p>Приложение можно установить на Android и ПК из браузера (Chrome/Edge): меню → «Установить приложение». Для установки нужен адрес <strong>localhost</strong> или HTTPS.</p>
+            <button class="btn btn-primary btn-block" type="button" id="installAppBtn" hidden><span data-icon="download"></span> Установить приложение</button>
+          </section>
+        </div>
+        <div class="help-note"><span data-icon="info"></span> Приложение не подбирает сечение кабеля и автоматические выключатели. Сечения вы задаёте сами — программа считает только метраж и формирует смету.</div>
+      </div>
+      <footer class="modal-foot">
+        <span>Версия 1.0 · офлайн-PWA</span>
+        <button class="btn btn-primary btn-sm" type="button" data-close-dialog>Понятно</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog class="modal modal-confirm" id="confirmDialog">
+    <div class="modal-card confirm-card">
+      <div class="confirm-icon"><span data-icon="warning"></span></div>
+      <h2 id="confirmTitle">Удалить объект?</h2>
+      <p id="confirmText">Это действие можно отменить через Ctrl+Z.</p>
+      <div class="confirm-actions">
+        <button class="btn btn-ghost" type="button" id="confirmCancelBtn">Отмена</button>
+        <button class="btn btn-danger" type="button" id="confirmOkBtn">Удалить</button>
+      </div>
+    </div>
+  </dialog>
+
+  <section class="report-overlay" id="reportOverlay" hidden aria-label="Отчёт для печати">
+    <header class="report-toolbar">
+      <button class="btn btn-ghost" type="button" id="reportCloseBtn"><span data-icon="select"></span> Назад к плану</button>
+      <div class="report-toolbar-title"><span class="eyebrow">Документ</span><strong>Смета кабеля</strong></div>
+      <div class="report-toolbar-actions">
+        <button class="btn btn-soft" type="button" id="reportCsvBtn"><span data-icon="download"></span> CSV</button>
+        <button class="btn btn-primary" type="button" id="reportPrintBtn"><span data-icon="printer"></span> Печать / PDF</button>
+      </div>
+    </header>
+    <div class="report-scroll">
+      <div class="report-preview" id="reportPreview"></div>
+    </div>
+  </section>
+
+  <input type="file" id="projectImportInput" accept=".json,application/json" hidden>
+  <input type="file" id="underlayImportInput" accept="image/*" hidden>
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="false"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

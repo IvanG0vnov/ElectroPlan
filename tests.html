@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Тесты ядра — ЭлектроПлан</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; background: #f8fafc; color: #0f172a; }
+    h1 { font-size: 20px; }
+    pre { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; white-space: pre-wrap; }
+    .ok { color: #15803d; }
+    .fail { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1>Тесты ядра расчёта</h1>
+  <pre id="out">Запуск…</pre>
+  <script type="module">
+    import {
+      createDemoProject, cloneProject, normalizeProject, sectionLabel,
+      getSectionInfo, cableSpecLabel
+    } from "./js/model.js";
+    import {
+      dist, polylineLength, polygonArea, polygonCentroid, pointInPolygon,
+      snapValue, pointToSegment, formatNumber, pluralRu
+    } from "./js/geometry.js";
+    import { cableMetrics, summarize } from "./js/calc.js";
+
+    const results = [];
+    function check(name, fn) {
+      try {
+        const detail = fn();
+        results.push({ name, ok: true, detail: detail || "" });
+      } catch (error) {
+        results.push({ name, ok: false, detail: error.message });
+      }
+    }
+    function assert(condition, message) {
+      if (!condition) throw new Error(message || "Условие не выполнено");
+    }
+    function close(actual, expected, epsilon = 1e-9) {
+      assert(Math.abs(actual - expected) < epsilon, `ожидалось ${expected}, получено ${actual}`);
+    }
+
+    check("dist 3-4-5", () => {
+      close(dist({ x: 0, y: 0 }, { x: 3, y: 4 }), 5);
+      return "5 м";
+    });
+
+    check("polylineLength", () => {
+      close(polylineLength([{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 4 }]), 7);
+      return "7 м";
+    });
+
+    check("polygonArea 4×3", () => {
+      close(polygonArea([
+        { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }
+      ]), 12);
+      return "12 м²";
+    });
+
+    check("polygonCentroid", () => {
+      const c = polygonCentroid([
+        { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }
+      ]);
+      close(c.x, 2);
+      close(c.y, 1.5);
+      return "центр 2; 1,5";
+    });
+
+    check("pointInPolygon", () => {
+      const square = [
+        { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }
+      ];
+      assert(pointInPolygon({ x: 2, y: 1.5 }, square));
+      assert(!pointInPolygon({ x: 5, y: 1.5 }, square));
+      return "внутри/снаружи";
+    });
+
+    check("snapValue", () => {
+      close(snapValue(0.26, 0.1), 0.3, 1e-9);
+      close(snapValue(-0.04, 0.1), 0, 1e-9);
+      return "округление к 0,1 м";
+    });
+
+    check("pointToSegment", () => {
+      const r = pointToSegment({ x: 2, y: 1 }, { x: 0, y: 0 }, { x: 4, y: 0 });
+      close(r.distance, 1);
+      close(r.point.x, 2);
+      close(r.point.y, 0);
+      return "расстояние 1 м";
+    });
+
+    check("cableMetrics: базовая формула", () => {
+      const floor = {
+        devices: [
+          { id: "d1", mountHeight: 0.3 },
+          { id: "d2", mountHeight: 0.9 }
+        ]
+      };
+      const cable = {
+        points: [{ x: 0, y: 0 }, { x: 3, y: 0 }],
+        routeHeight: 2.5,
+        startDeviceId: "d1",
+        endDeviceId: "d2",
+        section: 2.5,
+        cores: 3
+      };
+      const m = cableMetrics(cable, floor, {
+        reservePercent: 10, deviceSlack: 0.2
+      });
+      close(m.plan, 3);
+      close(m.vertical, 3.8);
+      close(m.slack, 0.4);
+      close(m.subtotal, 7.2);
+      close(m.reserve, 0.72);
+      close(m.total, 7.92);
+      return "3 + 3,8 + 0,4 + 10% = 7,92 м";
+    });
+
+    check("cableMetrics: нулевой запас", () => {
+      const floor = { devices: [{ id: "d1", mountHeight: 0.3 }] };
+      const cable = {
+        points: [{ x: 0, y: 0 }, { x: 3, y: 0 }],
+        routeHeight: 2.5,
+        startDeviceId: "d1",
+        endDeviceId: null,
+        reservePercent: 0,
+        section: 1.5,
+        cores: 3
+      };
+      const m = cableMetrics(cable, floor, { reservePercent: 10, deviceSlack: 0.2 });
+      close(m.total, 3 + 2.2 + 0.2);
+      return "запас 0%";
+    });
+
+    check("cableMetrics: запас проекта при null", () => {
+      const floor = { devices: [{ id: "d1", mountHeight: 0.3 }] };
+      const cable = {
+        points: [{ x: 0, y: 0 }, { x: 3, y: 0 }],
+        routeHeight: 2.5,
+        startDeviceId: "d1",
+        endDeviceId: null,
+        reservePercent: null,
+        section: 1.5,
+        cores: 3
+      };
+      const m = cableMetrics(cable, floor, { reservePercent: 10, deviceSlack: 0.2 });
+      close(m.reservePercent, 10);
+      close(m.subtotal, 5.4);
+      close(m.total, 5.94);
+      return "null → запас проекта 10%";
+    });
+
+    check("summarize: демо-проект", () => {
+      const project = createDemoProject();
+      const floor = project.floors[0];
+      const s = summarize(project, floor);
+      assert(s.routes.length === 8, "должно быть 8 трасс");
+      assert(s.bySection.length === 2, "должно быть 2 сечения");
+      assert(s.bySection.some((item) => item.section === 1.5));
+      assert(s.bySection.some((item) => item.section === 2.5));
+      assert(s.totals.total > 0, "итог должен быть больше нуля");
+      return `${s.routes.length} трасс, ${formatNumber(s.totals.total)} м`;
+    });
+
+    check("cloneProject: независимые копии", () => {
+      const project = createDemoProject();
+      const copy = cloneProject(project);
+      copy.floors[0].walls[0].a.x = 99;
+      assert(project.floors[0].walls[0].a.x !== 99, "оригинал изменился");
+      return "вложенные объекты скопированы";
+    });
+
+    check("normalizeProject: пустой импорт", () => {
+      const project = normalizeProject({ name: "Импорт" });
+      assert(project.floors.length === 1);
+      assert(project.settings.grid === 0.1);
+      assert(project.activeFloorId === project.floors[0].id);
+      return "настройки и этаж восстановлены";
+    });
+
+    check("подписи сечений", () => {
+      assert(sectionLabel(1.5) === "1,5 мм²");
+      assert(getSectionInfo(2.5).color === "#2563eb");
+      assert(cableSpecLabel({ section: 2.5, cores: 3 }) === "3×2,5");
+      return "1,5 мм²; 3×2,5";
+    });
+
+    check("formatNumber", () => {
+      assert(formatNumber(2.5) === "2,50");
+      assert(formatNumber(0) === "0,00");
+      return "десятичная запятая";
+    });
+
+    check("pluralRu", () => {
+      assert(pluralRu(1, "трасса", "трассы", "трасс") === "трасса");
+      assert(pluralRu(3, "трасса", "трассы", "трасс") === "трассы");
+      assert(pluralRu(5, "трасса", "трассы", "трасс") === "трасс");
+      assert(pluralRu(11, "трасса", "трассы", "трасс") === "трасс");
+      assert(pluralRu(22, "трасса", "трассы", "трасс") === "трассы");
+      return "1 трасса, 3 трассы, 5 трасс";
+    });
+
+    const failed = results.filter((result) => !result.ok);
+    const out = document.getElementById("out");
+    out.innerHTML = results.map((result) => {
+      const mark = result.ok ? "OK  " : "FAIL";
+      const cls = result.ok ? "ok" : "fail";
+      return `<span class="${cls}">${mark}</span> ${result.name}${result.detail ? " — " + result.detail : ""}`;
+    }).join("\n");
+    out.innerHTML += `\n\nИтого: ${results.length - failed.length} из ${results.length} тестов пройдено.`;
+    document.title = failed.length === 0 ? "OK" : "FAIL";
+    window.__testResults = results;
+    console.log("TEST_RESULTS", JSON.stringify(results));
+  </script>
+</body>
+</html>
