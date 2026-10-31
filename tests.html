@@ -18,7 +18,8 @@
   <script type="module">
     import {
       createDemoProject, cloneProject, normalizeProject, sectionLabel,
-      getSectionInfo, cableSpecLabel
+      getSectionInfo, cableSpecLabel, getOpeningType, wallLength,
+      openingSpan, normalizeOpening
     } from "./js/model.js";
     import {
       dist, polylineLength, polygonArea, polygonCentroid, pointInPolygon,
@@ -200,6 +201,86 @@
       assert(pluralRu(11, "трасса", "трассы", "трасс") === "трасс");
       assert(pluralRu(22, "трасса", "трассы", "трасс") === "трассы");
       return "1 трасса, 3 трассы, 5 трасс";
+    });
+
+    check("демо: двери и окна", () => {
+      const project = createDemoProject();
+      const openings = project.floors[0].openings;
+      assert(openings.length === 3, "должно быть 3 проёма");
+      assert(openings.filter((item) => item.type === "window").length === 2, "должно быть 2 окна");
+      assert(openings.filter((item) => item.type === "door").length === 1, "должна быть 1 дверь");
+      return "2 окна и 1 дверь";
+    });
+
+    check("wallLength и openingSpan", () => {
+      const wall = { a: { x: 0, y: 0 }, b: { x: 5, y: 0 } };
+      close(wallLength(wall), 5);
+      const span = openingSpan({ type: "door", offset: 1, width: 0.9 }, wall);
+      close(span.length, 5);
+      close(span.width, 0.9);
+      close(span.start, 0.55);
+      close(span.end, 1.45);
+      return "проём 0,55–1,45 м";
+    });
+
+    check("openingSpan: прижимает к концам стены", () => {
+      const wall = { a: { x: 0, y: 0 }, b: { x: 4, y: 0 } };
+      const nearStart = openingSpan({ type: "window", offset: 0, width: 1.2 }, wall);
+      close(nearStart.start, 0);
+      close(nearStart.end, 1.2);
+      const nearEnd = openingSpan({ type: "window", offset: 4, width: 1.2 }, wall);
+      close(nearEnd.start, 2.8);
+      close(nearEnd.end, 4);
+      return "0–1,2 и 2,8–4 м";
+    });
+
+    check("openingSpan: шире стены", () => {
+      const wall = { a: { x: 0, y: 0 }, b: { x: 1, y: 0 } };
+      const span = openingSpan({ type: "window", offset: 0.5, width: 3 }, wall);
+      assert(span.width <= 0.98, "ширина должна ужаться по стене");
+      close(span.start, 0.01);
+      close(span.end, 0.99);
+      return "ширина ограничена длиной стены";
+    });
+
+    check("normalizeOpening: значения по умолчанию", () => {
+      const wall = { a: { x: 0, y: 0 }, b: { x: 6, y: 0 } };
+      const door = normalizeOpening({ wallId: "w1", type: "door", width: 99, height: -1 }, wall);
+      assert(door.type === "door");
+      close(door.width, 4);
+      close(door.height, 0.3);
+      close(door.sill, 0);
+      assert(door.hinge === "start" && door.swing === 1);
+      const window = normalizeOpening({ wallId: "w1", type: "window" }, wall);
+      close(window.width, 1.2);
+      close(window.height, 1.4);
+      close(window.sill, 0.9);
+      return "дверь и окно нормализованы";
+    });
+
+    check("normalizeProject: проёмы и битые ссылки", () => {
+      const project = normalizeProject({
+        floors: [{
+          walls: [{ id: "w1", a: { x: 0, y: 0 }, b: { x: 4, y: 0 } }],
+          openings: [
+            { id: "o1", wallId: "w1", type: "window", offset: 2 },
+            { id: "o2", wallId: "missing", type: "door", offset: 1 }
+          ]
+        }]
+      });
+      const openings = project.floors[0].openings;
+      assert(openings.length === 1, "проём с несуществующей стеной должен отбрасываться");
+      assert(openings[0].id === "o1");
+      close(openings[0].width, 1.2);
+      return "1 проём сохранён, 1 отброшен";
+    });
+
+    check("cloneProject: проёмы копируются отдельно", () => {
+      const project = createDemoProject();
+      const copy = cloneProject(project);
+      copy.floors[0].openings[0].width = 9;
+      assert(project.floors[0].openings[0].width !== 9, "оригинал изменился");
+      return "вложенные проёмы скопированы";
     });
 
     const failed = results.filter((result) => !result.ok);

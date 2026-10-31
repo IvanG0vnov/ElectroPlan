@@ -15,6 +15,7 @@ import socket
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -32,8 +33,11 @@ class AppHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: object) -> None:
         # Не засоряем консоль каждой картинкой; ошибки всё равно видно.
-        if args and str(args[1]).startswith(("4", "5")):
-            super().log_message(fmt, *args)
+        if len(args) >= 2:
+            if str(args[1])[:1] in {"4", "5"}:
+                super().log_message(fmt, *args)
+            return
+        super().log_message(fmt, *args)
 
 
 def local_ip() -> str:
@@ -43,6 +47,30 @@ def local_ip() -> str:
             return sock.getsockname()[0]
     except OSError:
         return "—"
+
+
+def port_busy(host: str, port: int) -> bool:
+    """Проверяет занятость порта до создания сервера.
+
+    На Windows SO_REUSEADDR позволяет двум серверам занять один порт,
+    поэтому одной обработки OSError при bind недостаточно.
+    """
+    probe_host = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.4)
+            return probe.connect_ex((probe_host, port)) == 0
+    except OSError:
+        return False
+
+
+def already_running(url: str) -> bool:
+    """Проверяет, что на порту уже работает именно ЭлектроПлан."""
+    try:
+        with urllib.request.urlopen(url, timeout=1.5) as response:
+            return "ЭлектроПлан" in response.read(4096).decode("utf-8", "ignore")
+    except OSError:
+        return False
 
 
 def main() -> int:
@@ -55,12 +83,22 @@ def main() -> int:
     url = f"http://127.0.0.1:{args.port}/"
     handler = functools.partial(AppHandler, directory=str(ROOT))
 
+    if port_busy(args.host, args.port):
+        print(f"Порт {args.port} уже занят.")
+        if already_running(url):
+            print("ЭлектроПлан уже запущен — открываю его в браузере.")
+            if not args.no_browser:
+                webbrowser.open(url)
+            return 0
+        print(f"Порт занят другой программой. Попробуйте: py -3 serve.py --port 8080")
+        return 1
+
     try:
         server = ThreadingHTTPServer((args.host, args.port), handler)
     except OSError as error:
         print(f"Не удалось запустить сервер: {error}")
-        print(f"Возможно, порт {args.port} уже занят.")
-        print(f"Если приложение уже открыто, перейдите по адресу: {url}")
+        print("Порт освободился не до конца или занят другой программой.")
+        print("Попробуйте другой порт: py -3 serve.py --port 8080")
         return 1
 
     print("ЭлектроПлан — локальный сервер")

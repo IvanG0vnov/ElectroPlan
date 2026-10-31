@@ -2,12 +2,15 @@
 
 import {
   DEVICE_TYPES,
+  OPENING_TYPES,
   createDemoProject,
   createId,
   createProject,
   getDeviceType,
+  getOpeningType,
   normalizeProject,
-  nowIso
+  nowIso,
+  openingSpan
 } from "./model.js";
 import { formatNumber, pluralRu } from "./geometry.js";
 import { summarizeProject } from "./calc.js";
@@ -45,6 +48,8 @@ const TOOLS = [
   { id: "select", label: "Выбор", icon: "select" },
   { id: "wall", label: "Стена", icon: "wall" },
   { id: "room", label: "Комната", icon: "room" },
+  { id: "door", label: "Дверь", icon: "door" },
+  { id: "window", label: "Окно", icon: "window" },
   { id: "cable", label: "Кабель", icon: "cable" }
 ];
 
@@ -762,6 +767,7 @@ function handleInspectorChange(event) {
       device: floor.devices,
       wall: floor.walls,
       room: floor.rooms,
+      opening: floor.openings || [],
       cable: floor.cables
     };
     const item = collections[selection.type]?.find((entry) => entry.id === selection.id);
@@ -811,6 +817,38 @@ function handleInspectorChange(event) {
     if (selection.type === "room") {
       if (field === "name") item.name = String(rawValue).trim() || "Комната";
       else if (field === "color") item.color = String(rawValue);
+      return true;
+    }
+
+    if (selection.type === "opening") {
+      if (field === "type") {
+        if (!OPENING_TYPES[rawValue]) return false;
+        const oldInfo = getOpeningType(item.type);
+        const newInfo = getOpeningType(rawValue);
+        const wasDefaultWidth = Math.abs(Number(item.width) - oldInfo.defaultWidth) < 1e-6;
+        const wasDefaultHeight = Math.abs(Number(item.height) - oldInfo.defaultHeight) < 1e-6;
+        item.type = rawValue;
+        if (wasDefaultWidth) item.width = newInfo.defaultWidth;
+        if (wasDefaultHeight) item.height = newInfo.defaultHeight;
+        if (rawValue === "door") item.sill = 0;
+        else item.sill = newInfo.defaultSill;
+      } else if (field === "width" || field === "height" || field === "sill" || field === "offset") {
+        const fallback = Number(item[field]) || 0;
+        const number = parseNumber(rawValue, fallback);
+        if (!Number.isFinite(number)) return false;
+        if (field === "width") item.width = clamp(number, 0.2, 4);
+        else if (field === "height") item.height = clamp(number, 0.3, 5);
+        else if (field === "sill") item.sill = item.type === "door" ? 0 : clamp(number, 0, 3);
+        else item.offset = Math.max(0, number);
+      } else if (field === "hinge") {
+        item.hinge = rawValue === "end" ? "end" : "start";
+      } else if (field === "swing") {
+        item.swing = Number(rawValue) === -1 ? -1 : 1;
+      } else if (field === "note") {
+        item.note = String(rawValue);
+      }
+      const wall = floor.walls.find((entry) => entry.id === item.wallId);
+      if (wall) item.offset = openingSpan(item, wall).center;
       return true;
     }
 
@@ -1099,6 +1137,9 @@ async function loadInitialProject() {
     updateZoomLabels();
     updateHistoryButtons();
     setTimeout(() => editor?.fitView(), 40);
+    // Повторный фит после стабилизации раскладки. Если пользователь успел
+    // подвигать план, масштаб не трогаем.
+    setTimeout(() => editor?.fitViewIfUnadjusted(), 350);
     if (openedDemo) {
       setTimeout(() => showToast("Открыт демонстрационный план — загляните во вкладку «Смета»", "success", 4200), 700);
     }

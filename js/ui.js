@@ -4,9 +4,12 @@ import {
   CABLE_SECTIONS,
   CORES,
   DEVICE_TYPES,
+  OPENING_TYPES,
   cableSpecLabel,
   getDeviceType,
+  getOpeningType,
   getSectionInfo,
+  openingSpan,
   sectionLabel
 } from "./model.js";
 import { cableMetrics, summarizeProject } from "./calc.js";
@@ -316,6 +319,74 @@ function wallMarkup(project, floor, wall) {
   `;
 }
 
+function openingMarkup(project, floor, opening) {
+  const wall = floor.walls.find((item) => item.id === opening.wallId);
+  const span = wall ? openingSpan(opening, wall) : { length: 0, width: opening.width || 0, center: opening.offset || 0 };
+  const info = getOpeningType(opening.type);
+  const wallIndex = wall ? floor.walls.indexOf(wall) + 1 : 0;
+  const isDoor = opening.type === "door";
+  return `
+    <div class="inspector">
+      <div class="inspector-hero">
+        <div class="object-icon object-icon-opening" style="--object-color:${escapeHtml(info.color)}">
+          ${icon(isDoor ? "door" : "window")}
+        </div>
+        <div class="hero-copy">
+          <span class="eyebrow">Проём · ${escapeHtml(info.label)}</span>
+          <h2>${formatNumber(span.width)} м</h2>
+          <p>${wall ? `Стена ${wallIndex} · длина ${formatNumber(span.length)} м` : "Стена не найдена"}</p>
+        </div>
+      </div>
+
+      <section class="inspector-section">
+        <div class="section-heading"><h3>Параметры проёма</h3></div>
+        <div class="form-grid">
+          ${selectField({
+            label: "Тип проёма", name: "type", wide: true, value: opening.type,
+            options: Object.entries(OPENING_TYPES).map(([value, type]) => ({ value, label: type.label }))
+          })}
+          ${inputField({
+            label: "Смещение от начала стены, м", name: "offset", wide: true,
+            value: inputNumber(opening.offset, 2), type: "number", step: "0.05",
+            min: "0", max: inputNumber(span.length, 2),
+            hint: "Расстояние до центра проёма. Перетаскивайте проём прямо на плане."
+          })}
+          ${inputField({ label: "Ширина, м", name: "width", value: inputNumber(opening.width, 2), type: "number", step: "0.05", min: "0.2", max: "4" })}
+          ${inputField({ label: "Высота, м", name: "height", value: inputNumber(opening.height, 2), type: "number", step: "0.05", min: "0.3", max: "5" })}
+          ${isDoor ? "" : inputField({ label: "Подоконник, м", name: "sill", value: inputNumber(opening.sill, 2), type: "number", step: "0.05", min: "0", max: "3" })}
+          ${isDoor ? selectField({
+            label: "Петли", name: "hinge", value: opening.hinge,
+            options: [
+              { value: "start", label: "У начала стены" },
+              { value: "end", label: "У конца стены" }
+            ]
+          }) : ""}
+          ${isDoor ? selectField({
+            label: "Сторона открывания", name: "swing", value: String(opening.swing),
+            options: [
+              { value: "1", label: "Сторона 1" },
+              { value: "-1", label: "Сторона 2" }
+            ],
+            hint: "Меняет, в какую сторону от стены открывается дверное полотно."
+          }) : ""}
+        </div>
+      </section>
+
+      <section class="inspector-section">
+        <div class="section-heading"><h3>Примечание</h3></div>
+        <label class="field field-wide">
+          <textarea data-item-field="note" rows="2" placeholder="Например, двустворчатая, стеклопакет">${escapeHtml(opening.note || "")}</textarea>
+        </label>
+      </section>
+
+      <div class="inspector-actions">
+        <button class="btn btn-soft" type="button" data-action="center-selection">${icon("location")} Найти</button>
+        <button class="btn btn-ghost danger-text" type="button" data-action="delete-selection">${icon("trash")} Удалить проём</button>
+      </div>
+    </div>
+  `;
+}
+
 function roomMarkup(project, floor, room) {
   const area = polygonArea(room.points);
   const perimeter = polylineLength([...room.points, room.points[0]]);
@@ -457,6 +528,7 @@ export function renderProperties(container, { project, floor, selection }) {
       device: floor.devices,
       wall: floor.walls,
       room: floor.rooms,
+      opening: floor.openings || [],
       cable: floor.cables
     };
     item = collections[selection.type]?.find((entry) => entry.id === selection.id) || null;
@@ -469,6 +541,7 @@ export function renderProperties(container, { project, floor, selection }) {
   if (selection.type === "device") container.innerHTML = deviceMarkup(project, floor, item);
   else if (selection.type === "wall") container.innerHTML = wallMarkup(project, floor, item);
   else if (selection.type === "room") container.innerHTML = roomMarkup(project, floor, item);
+  else if (selection.type === "opening") container.innerHTML = openingMarkup(project, floor, item);
   else if (selection.type === "cable") container.innerHTML = cableMarkup(project, floor, item);
   else container.innerHTML = projectMarkup(project, floor);
 }

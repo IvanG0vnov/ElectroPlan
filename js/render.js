@@ -1,8 +1,15 @@
 // Отрисовка плана на Canvas 2D. Все размеры значков остаются читаемыми
 // при любом масштабе, а геометрия считается в метрах.
 
-import { DEVICE_TYPES, getDeviceType, getSectionInfo, cableSpecLabel } from "./model.js";
-import { polygonArea, polygonCentroid, formatMeters, formatArea } from "./geometry.js";
+import {
+  DEVICE_TYPES,
+  getDeviceType,
+  getOpeningType,
+  openingSpan,
+  getSectionInfo,
+  cableSpecLabel
+} from "./model.js";
+import { polygonArea, boundsOfPoints, formatMeters, formatArea } from "./geometry.js";
 import { cableMetrics } from "./calc.js";
 
 const DEVICE_COLORS = {
@@ -175,20 +182,36 @@ function drawRooms(ctx, floor, view, settings, selectedId) {
     ctx.restore();
   }
 
+}
+
+function drawRoomLabels(ctx, floor, view, settings) {
   if (!settings.showLabels || view.scale < 26) return;
   for (const room of floor.rooms) {
     if (!Array.isArray(room.points) || room.points.length < 3) continue;
-    const center = worldToScreen(polygonCentroid(room.points), view);
-    const area = polygonArea(room.points);
+    const bounds = boundsOfPoints(room.points);
+    if (!bounds) continue;
+    // Подпись — в левом верхнем углу комнаты, чтобы не спорить с
+    // устройствами и светильниками в центре помещения.
+    const anchor = worldToScreen(
+      { x: bounds.minX + 0.22, y: bounds.minY + 0.32 },
+      view
+    );
+    const name = room.name || "Комната";
+    const area = formatArea(polygonArea(room.points));
     ctx.save();
-    ctx.textAlign = "center";
+    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(30,41,59,0.75)";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(248,250,252,0.92)";
     ctx.font = "700 12px Manrope, system-ui, sans-serif";
-    ctx.fillText(room.name || "Комната", center.x, center.y - 7);
-    ctx.fillStyle = "rgba(71,85,105,0.70)";
+    ctx.strokeText(name, anchor.x, anchor.y);
+    ctx.fillStyle = "rgba(30,41,59,0.82)";
+    ctx.fillText(name, anchor.x, anchor.y);
     ctx.font = "500 10px Manrope, system-ui, sans-serif";
-    ctx.fillText(formatArea(area), center.x, center.y + 8);
+    ctx.strokeText(area, anchor.x, anchor.y + 15);
+    ctx.fillStyle = "rgba(71,85,105,0.76)";
+    ctx.fillText(area, anchor.x, anchor.y + 15);
     ctx.restore();
   }
 }
@@ -197,24 +220,27 @@ function drawWalls(ctx, floor, view, settings, selectedId) {
   ctx.save();
   ctx.lineCap = "butt";
   for (const wall of floor.walls) {
-    const a = worldToScreen(wall.a, view);
-    const b = worldToScreen(wall.b, view);
     const width = Math.max(2, Number(wall.thickness || 0.1) * view.scale);
-    ctx.strokeStyle = wall.id === selectedId ? "#f59e0b" : "#334155";
-    ctx.lineWidth = width;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-    if (wall.id === selectedId) {
-      ctx.strokeStyle = "rgba(255,255,255,0.85)";
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([6, 5]);
+    const segments = wallSegments(wall, openingsOnWall(floor, wall));
+    for (const segment of segments) {
+      const a = worldToScreen(pointOnWall(wall, segment.start), view);
+      const b = worldToScreen(pointOnWall(wall, segment.end), view);
+      ctx.strokeStyle = wall.id === selectedId ? "#f59e0b" : "#334155";
+      ctx.lineWidth = width;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
-      ctx.setLineDash([]);
+      if (wall.id === selectedId) {
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
   }
   ctx.restore();
@@ -231,6 +257,210 @@ function drawWalls(ctx, floor, view, settings, selectedId) {
       background: "rgba(248,250,252,0.90)"
     });
   }
+}
+
+function wallLengthOf(wall) {
+  return Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
+}
+
+function pointOnWall(wall, offset) {
+  const length = wallLengthOf(wall);
+  if (length < 1e-9) return { ...wall.a };
+  const t = offset / length;
+  return {
+    x: wall.a.x + (wall.b.x - wall.a.x) * t,
+    y: wall.a.y + (wall.b.y - wall.a.y) * t
+  };
+}
+
+function openingsOnWall(floor, wall) {
+  return (floor.openings || [])
+    .filter((opening) => opening.wallId === wall.id)
+    .map((opening) => ({ opening, ...openingSpan(opening, wall) }))
+    .filter((span) => span.length > 0.001)
+    .sort((a, b) => a.start - b.start);
+}
+
+function wallSegments(wall, spans) {
+  const length = wallLengthOf(wall);
+  const segments = [];
+  let cursor = 0;
+  for (const span of spans) {
+    const start = Math.max(0, Math.min(length, span.start));
+    const end = Math.max(start, Math.min(length, span.end));
+    if (start > cursor + 1e-4) segments.push({ start: cursor, end: start });
+    cursor = Math.max(cursor, end);
+  }
+  if (cursor < length - 1e-4) segments.push({ start: cursor, end: length });
+  return segments;
+}
+
+function drawOpeningSymbol(ctx, opening, wall, view, options = {}) {
+  const { selected = false, alpha = 1, preview = false } = options;
+  const span = openingSpan(opening, wall);
+  if (span.length < 0.001 || span.width < 0.02) return;
+  const start = worldToScreen(pointOnWall(wall, span.start), view);
+  const end = worldToScreen(pointOnWall(wall, span.end), view);
+  const lengthPx = Math.hypot(end.x - start.x, end.y - start.y);
+  if (lengthPx < 1) return;
+  const ux = (end.x - start.x) / lengthPx;
+  const uy = (end.y - start.y) / lengthPx;
+  const nx = -uy;
+  const ny = ux;
+  const thickness = Math.max(2, Number(wall.thickness || 0.1) * view.scale);
+  const jamb = Math.max(3, thickness * 0.8);
+  const type = getOpeningType(opening.type);
+  const color = selected || preview ? "#f59e0b" : type.color;
+  const frameWidth = Math.max(1.6, Math.min(3, thickness * 0.2));
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  ctx.strokeStyle = selected || preview ? "#f59e0b" : "#334155";
+  ctx.lineWidth = Math.max(1.4, Math.min(2.5, thickness * 0.16));
+  for (const point of [start, end]) {
+    ctx.beginPath();
+    ctx.moveTo(point.x + nx * jamb / 2, point.y + ny * jamb / 2);
+    ctx.lineTo(point.x - nx * jamb / 2, point.y - ny * jamb / 2);
+    ctx.stroke();
+  }
+
+  if (opening.type === "window") {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = frameWidth;
+    for (const side of [-1, 1]) {
+      const offset = thickness * 0.2 * side;
+      ctx.beginPath();
+      ctx.moveTo(start.x + nx * offset, start.y + ny * offset);
+      ctx.lineTo(end.x + nx * offset, end.y + ny * offset);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+  } else {
+    const hingeAtStart = opening.hinge !== "end";
+    const hinge = hingeAtStart ? start : end;
+    const dirX = hingeAtStart ? ux : -ux;
+    const dirY = hingeAtStart ? uy : -uy;
+    const swing = Number(opening.swing) === -1 ? -1 : 1;
+    const openX = hinge.x + nx * lengthPx * swing;
+    const openY = hinge.y + ny * lengthPx * swing;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = frameWidth;
+    ctx.beginPath();
+    ctx.moveTo(hinge.x, hinge.y);
+    ctx.lineTo(openX, openY);
+    ctx.stroke();
+
+    const startAngle = Math.atan2(dirY, dirX);
+    let delta = Math.atan2(ny * swing, nx * swing) - startAngle;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    ctx.globalAlpha = alpha * 0.65;
+    ctx.lineWidth = 1.1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.arc(hinge.x, hinge.y, lengthPx, startAngle, startAngle + delta, delta < 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+function drawOpeningSelection(ctx, opening, wall, view) {
+  const span = openingSpan(opening, wall);
+  if (span.length < 0.001) return;
+  const start = worldToScreen(pointOnWall(wall, span.start), view);
+  const end = worldToScreen(pointOnWall(wall, span.end), view);
+  const lengthPx = Math.hypot(end.x - start.x, end.y - start.y);
+  if (lengthPx < 1) return;
+  const nx = -(end.y - start.y) / lengthPx;
+  const ny = (end.x - start.x) / lengthPx;
+  const offset = Math.max(7, Number(wall.thickness || 0.1) * view.scale + 7) / 2;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(start.x + nx * offset, start.y + ny * offset);
+  ctx.lineTo(end.x + nx * offset, end.y + ny * offset);
+  ctx.lineTo(end.x - nx * offset, end.y - ny * offset);
+  ctx.lineTo(start.x - nx * offset, start.y - ny * offset);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(245,158,11,0.15)";
+  ctx.fill();
+  ctx.strokeStyle = "#f59e0b";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const center = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+  ctx.strokeStyle = "#f59e0b";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawOpenings(ctx, floor, view, settings, selectedId) {
+  for (const opening of floor.openings || []) {
+    const wall = floor.walls.find((item) => item.id === opening.wallId);
+    if (!wall) continue;
+    const selected = opening.id === selectedId;
+    if (selected) drawOpeningSelection(ctx, opening, wall, view);
+    drawOpeningSymbol(ctx, opening, wall, view, { selected });
+  }
+
+  if (!settings.showLabels || view.scale < 30) return;
+  for (const opening of floor.openings || []) {
+    const wall = floor.walls.find((item) => item.id === opening.wallId);
+    if (!wall) continue;
+    const span = openingSpan(opening, wall);
+    if (span.width < 0.05) continue;
+    const mid = worldToScreen(pointOnWall(wall, span.center), view);
+    const ux = (wall.b.x - wall.a.x) / span.length;
+    const uy = (wall.b.y - wall.a.y) / span.length;
+    const nx = -uy;
+    const ny = ux;
+    const swing = opening.type === "door" && Number(opening.swing) === -1 ? -1 : 1;
+    const side = opening.type === "door" ? -swing : 1;
+    const reach = Math.max(4, Number(wall.thickness || 0.1) * view.scale / 2) + 12;
+    const type = getOpeningType(opening.type);
+    const text = view.scale >= 56
+      ? `${type.short} · ${formatMeters(span.width, 2)}`
+      : formatMeters(span.width, 2);
+    drawPill(ctx, text, mid.x + nx * reach * side, mid.y + ny * reach * side, {
+      font: "600 9px Manrope, system-ui, sans-serif",
+      background: "rgba(255,255,255,0.9)",
+      color: opening.type === "window" ? "#0369a1" : "#92400e",
+      border: "rgba(148,163,184,0.3)",
+      paddingX: 4
+    });
+  }
+}
+
+function drawOpeningPreview(ctx, preview, view) {
+  if (!preview?.wall) return;
+  if (preview.width < 0.02) return;
+  drawOpeningSymbol(ctx, preview, preview.wall, view, { preview: true, alpha: 0.75 });
+  const span = openingSpan(preview, preview.wall);
+  const mid = worldToScreen(pointOnWall(preview.wall, span.center), view);
+  const type = getOpeningType(preview.type);
+  drawPill(ctx, `${type.label} · ${formatMeters(span.width, 2)}`, mid.x, mid.y - 20, {
+    font: "600 10px Manrope, system-ui, sans-serif",
+    background: "rgba(245,158,11,0.94)",
+    color: "#fff",
+    border: "none"
+  });
 }
 
 function drawCableLabel(ctx, cable, metrics, view) {
@@ -716,6 +946,7 @@ export function renderPlan(canvas, options) {
     draft,
     snap,
     deviceType,
+    openingPreview,
     onImageLoad
   } = options;
   const ctx = canvas.getContext("2d");
@@ -739,6 +970,13 @@ export function renderPlan(canvas, options) {
   drawUnderlay(ctx, floor, view, onImageLoad);
   drawRooms(ctx, floor, view, project.settings, selection?.type === "room" ? selection.id : null);
   drawWalls(ctx, floor, view, project.settings, selection?.type === "wall" ? selection.id : null);
+  drawOpenings(
+    ctx,
+    floor,
+    view,
+    project.settings,
+    selection?.type === "opening" ? selection.id : null
+  );
   drawCables(
     ctx,
     floor,
@@ -747,6 +985,7 @@ export function renderPlan(canvas, options) {
     selection?.type === "cable" ? selection.id : null,
     project
   );
+  drawRoomLabels(ctx, floor, view, project.settings);
   drawDevices(
     ctx,
     floor,
@@ -758,11 +997,13 @@ export function renderPlan(canvas, options) {
   if (draft) {
     drawDraft(ctx, draft, view, floor, deviceType, project.settings);
   }
+  if (openingPreview) drawOpeningPreview(ctx, openingPreview, view);
 
   if (selection) {
     const collections = {
       wall: floor.walls,
       room: floor.rooms,
+      opening: floor.openings || [],
       cable: floor.cables,
       device: floor.devices
     };

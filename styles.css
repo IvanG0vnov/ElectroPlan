@@ -1176,6 +1176,10 @@ textarea {
   --object-color: #2563eb;
 }
 
+.object-icon-opening {
+  --object-color: #b45309;
+}
+
 .hero-copy {
   min-width: 0;
 }
@@ -2860,7 +2864,7 @@ textarea {
     flex: 0 0 var(--dock-height);
     height: var(--dock-height);
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(9, 1fr);
     gap: 1px;
     padding: 5px 6px calc(5px + env(safe-area-inset-bottom, 0px));
     background: rgba(255, 255, 255, 0.96);

@@ -4,6 +4,8 @@ const paths = {
   select: '<path d="M5 3.5 19 12l-6 .9-3.2 5.2L5 3.5Z"/>',
   wall: '<path d="M4 19h16M6 19V9m0 4h12m0 6V7"/>',
   room: '<path d="M4 6.5 12 3l8 3.5v11L12 21l-8-3.5v-11Z"/><path d="M4 6.5 12 10l8-3.5M12 10v11"/>',
+  door: '<path d="M6 21V3.5h9V21M6 21h12M11 12.5h.01"/>',
+  window: '<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M12 4v16M4 12h16"/>',
   cable: '<path d="M4 18c3.5 0 3.5-4 7-4s3.5 4 7 4"/><path d="M4 18v-2m16 2v-2"/>',
   undo: '<path d="M9 7 4 12l5 5"/><path d="M4 12h8.5a5.5 5.5 0 0 1 0 11H10"/>',
   redo: '<path d="m15 7 5 5-5 5"/><path d="M20 12h-8.5a5.5 5.5 0 0 0 0 11H14"/>',

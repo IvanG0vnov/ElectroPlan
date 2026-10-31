@@ -79,6 +79,7 @@ export function findSelection(project = state.project, selection = state.selecti
   const collections = {
     wall: floor.walls,
     room: floor.rooms,
+    opening: floor.openings || [],
     device: floor.devices,
     cable: floor.cables
   };
@@ -110,6 +111,7 @@ export function selectItem(item) {
   }
   let type = null;
   if (Array.isArray(item.points)) type = item.cores !== undefined ? "cable" : "room";
+  else if (item.wallId && item.offset !== undefined) type = "opening";
   else if (item.a && item.b) type = "wall";
   else if (item.type && item.x !== undefined) type = "device";
   if (type) select(type, item.id);

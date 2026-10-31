@@ -17,6 +17,7 @@ import {
 } from "./store.js";
 import {
   dist,
+  clamp,
   pointToPolyline,
   pointToSegment,
   pointInPolygon,
@@ -26,7 +27,14 @@ import {
   polygonArea,
   formatNumber
 } from "./geometry.js";
-import { createId, getDeviceType, getSectionInfo, DEFAULT_SETTINGS } from "./model.js";
+import {
+  createId,
+  getDeviceType,
+  getOpeningType,
+  getSectionInfo,
+  openingSpan,
+  DEFAULT_SETTINGS
+} from "./model.js";
 import { renderPlan, screenToWorld, worldToScreen } from "./render.js";
 
 const ROOM_COLORS = ["#dbeafe", "#dcfce7", "#fef3c7", "#fae8ff", "#e0f2fe", "#fee2e2"];
@@ -58,11 +66,16 @@ export class PlanEditor {
     this.pinch = null;
     this.draft = null;
     this.snap = null;
+    this.openingPreview = null;
     this.spaceDown = false;
     this.lastPointerWorld = null;
     this.suppressClick = false;
     this.renderQueued = false;
     this.disposers = [];
+    this.userViewAdjusted = false;
+    this.resizeFitTimer = 0;
+    this.lastCanvasWidth = canvas.clientWidth;
+    this.lastCanvasHeight = canvas.clientHeight;
 
     this.handlePointerDown = this.handlePointerDown.bind(this);
     this.handlePointerMove = this.handlePointerMove.bind(this);
@@ -88,7 +101,24 @@ export class PlanEditor {
     window.addEventListener("blur", this.handleBlur);
 
     if ("ResizeObserver" in window) {
-      this.resizeObserver = new ResizeObserver(() => this.requestRender());
+      this.resizeObserver = new ResizeObserver(() => {
+        const width = this.canvas.clientWidth;
+        const height = this.canvas.clientHeight;
+        const changed =
+          Math.abs(width - this.lastCanvasWidth) > 2 ||
+          Math.abs(height - this.lastCanvasHeight) > 2;
+        this.lastCanvasWidth = width;
+        this.lastCanvasHeight = height;
+        // Пока пользователь не двигал план, подстраиваем масштаб под окно:
+        // так первый запуск и восстановление окна PWA не оставляют пустые поля.
+        if (changed && !this.userViewAdjusted) {
+          clearTimeout(this.resizeFitTimer);
+          this.resizeFitTimer = setTimeout(() => {
+            if (!this.userViewAdjusted) this.fitView();
+          }, 120);
+        }
+        this.requestRender();
+      });
       this.resizeObserver.observe(canvas);
     } else {
       window.addEventListener("resize", () => this.requestRender());
@@ -100,6 +130,7 @@ export class PlanEditor {
     this.disposers.push(on("tool", () => {
       if (this.draft) this.cancelDraft();
       this.snap = null;
+      this.openingPreview = null;
       this.updateCursor();
       this.notifyDraft();
       this.requestRender();
@@ -109,6 +140,7 @@ export class PlanEditor {
   }
 
   destroy() {
+    clearTimeout(this.resizeFitTimer);
     this.canvas.removeEventListener("pointerdown", this.handlePointerDown);
     this.canvas.removeEventListener("pointermove", this.handlePointerMove);
     this.canvas.removeEventListener("pointerup", this.handlePointerUp);
@@ -145,6 +177,7 @@ export class PlanEditor {
       draft: this.draft,
       snap: this.snap?.kind && this.snap.kind !== "grid" ? this.snap : null,
       deviceType: state.deviceType,
+      openingPreview: this.openingPreview,
       onImageLoad: () => this.requestRender()
     });
   }
@@ -167,6 +200,7 @@ export class PlanEditor {
   }
 
   zoomAt(factor, screenPoint = null) {
+    this.userViewAdjusted = true;
     const rect = this.getRect();
     const focal = screenPoint || { x: rect.width / 2, y: rect.height / 2 };
     const world = screenToWorld(focal, state.view);
@@ -186,6 +220,10 @@ export class PlanEditor {
 
   zoomOut() {
     this.zoomAt(0.8);
+  }
+
+  fitViewIfUnadjusted(padding = 64) {
+    if (!this.userViewAdjusted) this.fitView(padding);
   }
 
   fitView(padding = 64) {
@@ -238,7 +276,10 @@ export class PlanEditor {
     if (!item || !floor) return;
     let points = [];
     if (item.points) points = item.points;
-    else if (item.a && item.b) points = [item.a, item.b];
+    else if (item.wallId) {
+      const wall = floor.walls.find((entry) => entry.id === item.wallId);
+      if (wall) points = [wall.a, wall.b];
+    } else if (item.a && item.b) points = [item.a, item.b];
     else if (item.x !== undefined) points = [item];
     const bounds = boundsOfPoints(points);
     if (!bounds) return;
@@ -309,6 +350,9 @@ export class PlanEditor {
         } else if (hit.type === "device") {
           select("device", hit.item.id);
           this.active = this.makeDrag(hit, screen, world, event.pointerId);
+        } else if (hit.type === "opening") {
+          select("opening", hit.item.id);
+          this.active = this.makeOpeningDrag(hit, screen, world, event.pointerId);
         } else {
           select(hit.type, hit.item.id);
           this.active = {
@@ -380,7 +424,10 @@ export class PlanEditor {
       }
 
       if (active.kind === "pan") {
-        if (distance > 2) active.moved = true;
+        if (distance > 2) {
+          active.moved = true;
+          this.userViewAdjusted = true;
+        }
         const nextView = {
           ...state.view,
           offsetX: active.startOffsetX + dx,
@@ -476,6 +523,7 @@ export class PlanEditor {
   handlePointerLeave = () => {
     if (!this.active && !this.pinch) {
       this.snap = null;
+      this.openingPreview = null;
       this.lastPointerWorld = null;
       this.canvas.style.cursor = state.tool === "select" ? "default" : "crosshair";
       this.callbacks.onCursor?.(null);
@@ -592,6 +640,7 @@ export class PlanEditor {
             device: floor.devices,
             wall: floor.walls,
             room: floor.rooms,
+            opening: floor.openings || [],
             cable: floor.cables
           }[selection.type];
           const item = collection?.find((entry) => entry.id === selection.id);
@@ -604,6 +653,18 @@ export class PlanEditor {
             item.a.y += delta.y;
             item.b.x += delta.x;
             item.b.y += delta.y;
+          } else if (selection.type === "opening") {
+            const wall = floor.walls.find((entry) => entry.id === item.wallId);
+            if (!wall) return false;
+            const length = Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
+            if (length < 0.001) return false;
+            const ux = (wall.b.x - wall.a.x) / length;
+            const uy = (wall.b.y - wall.a.y) / length;
+            const shift = delta.x * ux + delta.y * uy;
+            item.offset = openingSpan(
+              { ...item, offset: (Number(item.offset) || 0) + shift },
+              wall
+            ).center;
           } else if (item.points) {
             item.points = item.points.map((point) => ({ x: point.x + delta.x, y: point.y + delta.y }));
           }
@@ -631,6 +692,7 @@ export class PlanEditor {
   // --- Масштаб и жесты ---------------------------------------------------
 
   startPinch() {
+    this.userViewAdjusted = true;
     const entries = [...this.pointers.values()];
     if (entries.length < 2) return;
     const [first, second] = entries;
@@ -677,14 +739,23 @@ export class PlanEditor {
     this.lastPointerWorld = world;
     const tool = state.tool;
     const isDeviceTool = tool === "device";
+    const isOpeningTool = tool === "door" || tool === "window";
     const isDrawTool = tool === "wall" || tool === "room" || tool === "cable";
 
     let snap = null;
-    if (isDeviceTool) {
+    if (isOpeningTool) {
+      const wallHit = this.findWallAt(world);
+      this.draft = null;
+      this.snap = null;
+      this.openingPreview = wallHit ? this.buildOpeningPreview(wallHit, tool) : null;
+      this.canvas.style.cursor = wallHit ? "copy" : "not-allowed";
+    } else if (isDeviceTool) {
+      this.openingPreview = null;
       snap = this.computeSnap(world, { includeVertices: false, includeWalls: false });
       this.draft = { kind: "device", current: snap.point };
       this.snap = snap;
     } else if (isDrawTool) {
+      this.openingPreview = null;
       const options = {
         includeDevices: tool === "cable",
         includeWalls: tool === "room" || tool === "cable",
@@ -705,6 +776,7 @@ export class PlanEditor {
       }
       this.snap = snap;
     } else {
+      this.openingPreview = null;
       const hit = this.hitTest(world);
       this.snap = hit?.kind === "handle" ? null : null;
       this.draft = null;
@@ -809,12 +881,54 @@ export class PlanEditor {
     return nearest?.device || null;
   }
 
+  findWallAt(point, radiusPx = 22) {
+    const floor = activeFloor();
+    if (!floor) return null;
+    let nearest = null;
+    for (const wall of floor.walls) {
+      const result = pointToSegment(point, wall.a, wall.b);
+      const threshold = Math.max(Number(wall.thickness || 0.1) / 2, 4 / state.view.scale) +
+        radiusPx / state.view.scale;
+      if (result.distance <= threshold && (!nearest || result.distance < nearest.distance)) {
+        const length = Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
+        nearest = {
+          wall,
+          result,
+          length,
+          offset: result.t * length,
+          distance: result.distance
+        };
+      }
+    }
+    return nearest;
+  }
+
+  buildOpeningPreview(wallHit, type) {
+    const info = getOpeningType(type);
+    const span = openingSpan(
+      { type, offset: wallHit.offset, width: info.defaultWidth },
+      wallHit.wall
+    );
+    return {
+      wall: wallHit.wall,
+      wallId: wallHit.wall.id,
+      type,
+      offset: span.center,
+      width: span.width,
+      height: info.defaultHeight,
+      sill: info.defaultSill,
+      hinge: "start",
+      swing: 1
+    };
+  }
+
   // --- Инструменты -------------------------------------------------------
 
   handleToolClick(world, event) {
     if (state.tool === "wall") this.addWallPoint(world, event);
     else if (state.tool === "room") this.addRoomPoint(world, event);
     else if (state.tool === "cable") this.addCablePoint(world, event);
+    else if (state.tool === "door" || state.tool === "window") this.addOpening(world);
     else if (state.tool === "device") this.addDevice(world, event);
   }
 
@@ -909,6 +1023,52 @@ export class PlanEditor {
     }
     this.notifyDraft();
     this.requestRender();
+  }
+
+  addOpening(world) {
+    const floor = activeFloor();
+    if (!floor) return false;
+    const wallHit = this.findWallAt(world);
+    if (!wallHit) {
+      this.callbacks.onToast?.("Нажмите на стену, чтобы поставить проём", "warning");
+      return false;
+    }
+    const type = state.tool === "window" ? "window" : "door";
+    const info = getOpeningType(type);
+    const span = openingSpan(
+      { type, offset: wallHit.offset, width: info.defaultWidth },
+      wallHit.wall
+    );
+    const overlaps = (floor.openings || []).some((opening) => {
+      if (opening.wallId !== wallHit.wall.id) return false;
+      const other = openingSpan(opening, wallHit.wall);
+      return span.start < other.end + 0.05 && span.end > other.start - 0.05;
+    });
+    if (overlaps) {
+      this.callbacks.onToast?.("Здесь уже есть проём — выберите другое место", "warning");
+      return false;
+    }
+    const opening = {
+      id: createId("opening"),
+      wallId: wallHit.wall.id,
+      type,
+      offset: span.center,
+      width: span.width,
+      height: info.defaultHeight,
+      sill: info.defaultSill,
+      hinge: "start",
+      swing: 1,
+      note: ""
+    };
+    commit((project) => {
+      const targetFloor = project.floors.find((item) => item.id === project.activeFloorId);
+      targetFloor.openings ||= [];
+      targetFloor.openings.push(opening);
+    }, { selectAfter: { type: "opening", id: opening.id } });
+    this.openingPreview = null;
+    this.callbacks.onToast?.(`${info.label} добавлена`);
+    this.requestRender();
+    return true;
   }
 
   addDevice(world, event) {
@@ -1071,9 +1231,18 @@ export class PlanEditor {
       } else if (selection.type === "wall") {
         label = "Стена";
         targetFloor.walls = targetFloor.walls.filter((item) => item.id !== selection.id);
+        targetFloor.openings = (targetFloor.openings || []).filter(
+          (item) => item.wallId !== selection.id
+        );
       } else if (selection.type === "room") {
         label = targetFloor.rooms.find((item) => item.id === selection.id)?.name || "Комната";
         targetFloor.rooms = targetFloor.rooms.filter((item) => item.id !== selection.id);
+      } else if (selection.type === "opening") {
+        const opening = (targetFloor.openings || []).find((item) => item.id === selection.id);
+        label = opening ? getOpeningType(opening.type).label : "Проём";
+        targetFloor.openings = (targetFloor.openings || []).filter(
+          (item) => item.id !== selection.id
+        );
       } else if (selection.type === "cable") {
         label = targetFloor.cables.find((item) => item.id === selection.id)?.name || "Трасса";
         targetFloor.cables = targetFloor.cables.filter((item) => item.id !== selection.id);
@@ -1115,8 +1284,40 @@ export class PlanEditor {
     };
   }
 
+  makeOpeningDrag(hit, startScreen, startWorld, pointerId) {
+    return {
+      kind: "dragPoint",
+      pointerId,
+      startScreen,
+      startWorld,
+      started: false,
+      drag: {
+        objectType: "opening",
+        objectId: hit.item.id,
+        wallId: hit.item.wallId,
+        startOffset: Number(hit.item.offset) || 0
+      }
+    };
+  }
+
   applyDrag(active, world, event) {
     const drag = active.drag;
+    if (drag.objectType === "opening") {
+      const floor = activeFloor();
+      const opening = (floor?.openings || []).find((item) => item.id === drag.objectId);
+      const wall = floor?.walls.find((item) => item.id === opening?.wallId);
+      if (!opening || !wall) return;
+      const result = pointToSegment(world, wall.a, wall.b);
+      const length = Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
+      if (length < 0.001) return;
+      opening.offset = openingSpan(
+        { ...opening, offset: result.t * length },
+        wall
+      ).center;
+      this.snap = null;
+      mutate(() => {});
+      return;
+    }
     let deltaX = world.x - active.startWorld.x;
     let deltaY = world.y - active.startWorld.y;
     if (event.shiftKey) {
@@ -1210,6 +1411,7 @@ export class PlanEditor {
       const selected = {
         wall: floor.walls,
         room: floor.rooms,
+        opening: floor.openings || [],
         cable: floor.cables
       }[state.selection.type]?.find((entry) => entry.id === state.selection.id);
       if (selected) {
@@ -1255,6 +1457,27 @@ export class PlanEditor {
       }
     }
     if (nearestCable) return { type: "cable", item: nearestCable.item };
+
+    let nearestOpening = null;
+    for (const opening of floor.openings || []) {
+      const wall = floor.walls.find((item) => item.id === opening.wallId);
+      if (!wall) continue;
+      const span = openingSpan(opening, wall);
+      if (span.length < 0.001) continue;
+      const ux = (wall.b.x - wall.a.x) / span.length;
+      const uy = (wall.b.y - wall.a.y) / span.length;
+      const start = { x: wall.a.x + ux * span.start, y: wall.a.y + uy * span.start };
+      const end = { x: wall.a.x + ux * span.end, y: wall.a.y + uy * span.end };
+      const result = pointToSegment(world, start, end);
+      const threshold = Math.max(
+        tolerance,
+        Number(wall.thickness || 0.1) / 2 + 3 / state.view.scale
+      );
+      if (result.distance <= threshold && (!nearestOpening || result.distance < nearestOpening.distance)) {
+        nearestOpening = { item: opening, distance: result.distance };
+      }
+    }
+    if (nearestOpening) return { type: "opening", item: nearestOpening.item };
 
     let nearestWall = null;
     for (const wall of floor.walls) {
@@ -1305,6 +1528,12 @@ export class PlanEditor {
     } else if (tool === "device") {
       title = getDeviceType(state.deviceType).label;
       hint = "Нажмите на плане, чтобы разместить устройство.";
+    } else if (tool === "door") {
+      title = "Дверь";
+      hint = "Кликните по стене — дверь встанет в этом месте. Положение и размеры меняются в свойствах.";
+    } else if (tool === "window") {
+      title = "Окно";
+      hint = "Кликните по стене — окно встанет в этом месте. Ширина, высота и подоконник задаются в свойствах.";
     }
     this.callbacks.onDraftState?.({
       active: Boolean(this.draft && this.draft.kind !== "device"),

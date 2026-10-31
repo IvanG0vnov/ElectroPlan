@@ -25,6 +25,25 @@ export const DEVICE_TYPES = {
   junction: { label: "Распаячная коробка", short: "Коробка", mountHeight: 2.3, defaultName: "Распаячная коробка" }
 };
 
+export const OPENING_TYPES = {
+  door: {
+    label: "Дверь",
+    short: "Дверь",
+    defaultWidth: 0.9,
+    defaultHeight: 2.1,
+    defaultSill: 0,
+    color: "#b45309"
+  },
+  window: {
+    label: "Окно",
+    short: "Окно",
+    defaultWidth: 1.2,
+    defaultHeight: 1.4,
+    defaultSill: 0.9,
+    color: "#0284c7"
+  }
+};
+
 export const DEFAULT_SETTINGS = {
   grid: 0.1,
   snap: true,
@@ -57,6 +76,7 @@ export function createFloor(name = "1 этаж") {
     name,
     walls: [],
     rooms: [],
+    openings: [],
     devices: [],
     cables: [],
     underlay: null
@@ -90,12 +110,31 @@ export function createDemoProject() {
     height: 2.7
   });
 
-  floor.walls = [
-    wall(0, 0, 8, 0, 0.2),
-    wall(8, 0, 8, 5, 0.2),
-    wall(8, 5, 0, 5, 0.2),
-    wall(0, 5, 0, 0, 0.2),
-    wall(4.5, 0, 4.5, 5, 0.1)
+  const topWall = wall(0, 0, 8, 0, 0.2);
+  const rightWall = wall(8, 0, 8, 5, 0.2);
+  const bottomWall = wall(8, 5, 0, 5, 0.2);
+  const leftWall = wall(0, 5, 0, 0, 0.2);
+  const middleWall = wall(4.5, 0, 4.5, 5, 0.1);
+  floor.walls = [topWall, rightWall, bottomWall, leftWall, middleWall];
+
+  const opening = (wallId, type, offset, extra = {}) => ({
+    id: createId("opening"),
+    wallId,
+    type,
+    offset,
+    width: OPENING_TYPES[type].defaultWidth,
+    height: OPENING_TYPES[type].defaultHeight,
+    sill: OPENING_TYPES[type].defaultSill,
+    hinge: "start",
+    swing: 1,
+    note: "",
+    ...extra
+  });
+
+  floor.openings = [
+    opening(topWall.id, "window", 2.2),
+    opening(topWall.id, "window", 6.2),
+    opening(middleWall.id, "door", 1.2)
   ];
 
   floor.rooms = [
@@ -199,6 +238,7 @@ export function cloneProject(project) {
         ...room,
         points: room.points.map((point) => ({ ...point }))
       })),
+      openings: (floor.openings || []).map((item) => ({ ...item })),
       devices: floor.devices.map((device) => ({ ...device })),
       cables: floor.cables.map((cable) => ({
         ...cable,
@@ -215,6 +255,71 @@ export function getFloor(project, floorId = project.activeFloorId) {
 
 export function getDeviceType(type) {
   return DEVICE_TYPES[type] || DEVICE_TYPES.socket;
+}
+
+export function getOpeningType(type) {
+  return OPENING_TYPES[type] || OPENING_TYPES.door;
+}
+
+export function wallLength(wall) {
+  if (!wall?.a || !wall?.b) return 0;
+  return Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
+}
+
+// Положение проёма на стене: смещение хранится до центра, а границы
+// всегда подрезаются по длине стены — даже если стену укоротили позже.
+export function openingSpan(opening, wall) {
+  const type = getOpeningType(opening?.type);
+  const length = wallLength(wall);
+  if (!Number.isFinite(length) || length <= 0.001) {
+    return { length: 0, width: 0, center: 0, start: 0, end: 0 };
+  }
+  const maxWidth = Math.max(0.05, length - 0.02);
+  const rawWidth = Number(opening?.width);
+  const width = Math.min(
+    maxWidth,
+    Math.max(0.2, Number.isFinite(rawWidth) ? rawWidth : type.defaultWidth)
+  );
+  const rawOffset = Number(opening?.offset);
+  const requested = Number.isFinite(rawOffset) ? rawOffset : length / 2;
+  const half = width / 2;
+  const center = Math.min(Math.max(requested, half), Math.max(half, length - half));
+  return { length, width, center, start: center - half, end: center + half };
+}
+
+export function normalizeOpening(input, wall = null) {
+  if (!input || typeof input !== "object" || !input.wallId) return null;
+  const type = OPENING_TYPES[input.type] ? input.type : "door";
+  const info = OPENING_TYPES[type];
+  const rawWidth = Number(input.width);
+  const rawHeight = Number(input.height);
+  const rawSill = Number(input.sill);
+  const width = Number.isFinite(rawWidth) ? Math.min(4, Math.max(0.2, rawWidth)) : info.defaultWidth;
+  const height = Number.isFinite(rawHeight) ? Math.min(5, Math.max(0.3, rawHeight)) : info.defaultHeight;
+  const sill = type === "door"
+    ? 0
+    : Number.isFinite(rawSill) ? Math.min(3, Math.max(0, rawSill)) : info.defaultSill;
+  const rawOffset = Number(input.offset);
+  const fallbackOffset = wall ? wallLength(wall) / 2 : 0;
+  let offset = Number.isFinite(rawOffset) ? rawOffset : fallbackOffset;
+  let effectiveWidth = width;
+  if (wall) {
+    const span = openingSpan({ ...input, type, width, offset }, wall);
+    offset = span.center;
+    effectiveWidth = span.width;
+  }
+  return {
+    id: input.id || createId("opening"),
+    wallId: String(input.wallId),
+    type,
+    offset,
+    width: effectiveWidth,
+    height,
+    sill,
+    hinge: input.hinge === "end" ? "end" : "start",
+    swing: Number(input.swing) === -1 ? -1 : 1,
+    note: String(input.note || "")
+  };
 }
 
 export function sectionLabel(value) {
@@ -257,6 +362,7 @@ export function normalizeProject(input) {
     ...floor,
     walls: Array.isArray(floor.walls) ? floor.walls : [],
     rooms: Array.isArray(floor.rooms) ? floor.rooms : [],
+    openings: Array.isArray(floor.openings) ? floor.openings : [],
     devices: Array.isArray(floor.devices) ? floor.devices : [],
     cables: Array.isArray(floor.cables) ? floor.cables : [],
     underlay: floor.underlay || null
@@ -264,7 +370,12 @@ export function normalizeProject(input) {
 
   for (const floor of project.floors) {
     floor.id ||= createId("floor");
-    for (const collection of [floor.walls, floor.rooms, floor.devices, floor.cables]) {
+    const wallsById = new Map(floor.walls.map((wall) => [wall.id, wall]));
+    floor.openings = floor.openings
+      .filter((item) => item && wallsById.has(item.wallId))
+      .map((item) => normalizeOpening(item, wallsById.get(item.wallId)))
+      .filter(Boolean);
+    for (const collection of [floor.walls, floor.rooms, floor.openings, floor.devices, floor.cables]) {
       for (const item of collection) item.id ||= createId("item");
     }
   }

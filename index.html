@@ -174,6 +174,8 @@
           <button class="dock-btn active" type="button" data-tool="select"><span data-icon="select"></span><small>Выбор</small></button>
           <button class="dock-btn" type="button" data-tool="wall"><span data-icon="wall"></span><small>Стена</small></button>
           <button class="dock-btn" type="button" data-tool="room"><span data-icon="room"></span><small>Комната</small></button>
+          <button class="dock-btn" type="button" data-tool="door"><span data-icon="door"></span><small>Дверь</small></button>
+          <button class="dock-btn" type="button" data-tool="window"><span data-icon="window"></span><small>Окно</small></button>
           <button class="dock-btn" type="button" data-tool="cable"><span data-icon="cable"></span><small>Кабель</small></button>
           <button class="dock-btn" type="button" id="mobileDevicesBtn"><span data-icon="plug"></span><small>Устройства</small></button>
           <button class="dock-btn" type="button" id="mobileInspectorBtn"><span data-icon="settings"></span><small>Свойства</small></button>
@@ -257,14 +259,18 @@
           </article>
           <article class="help-step">
             <span class="help-step-number">02</span>
-            <div><h3>Расставьте электрику</h3><p>Выберите розетку, выключатель, светильник или щит в левой панели и нажмите на план. Высоту установки можно изменить в свойствах.</p></div>
+            <div><h3>Добавьте двери и окна</h3><p>Выберите «Дверь» или «Окно» и кликните по стене. Проём можно перетаскивать вдоль стены, а ширину, высоту, подоконник и сторону открывания — менять в свойствах.</p></div>
           </article>
           <article class="help-step">
             <span class="help-step-number">03</span>
-            <div><h3>Проложите трассы</h3><p>Инструмент «Кабель»: начните у устройства, добавьте изгибы, завершите у второго устройства. Двойной клик по готовой трассе добавляет точку.</p></div>
+            <div><h3>Расставьте электрику</h3><p>Выберите розетку, выключатель, светильник или щит в левой панели и нажмите на план. Высоту установки можно изменить в свойствах.</p></div>
           </article>
           <article class="help-step">
             <span class="help-step-number">04</span>
+            <div><h3>Проложите трассы</h3><p>Инструмент «Кабель»: начните у устройства, добавьте изгибы, завершите у второго устройства. Двойной клик по готовой трассе добавляет точку.</p></div>
+          </article>
+          <article class="help-step">
+            <span class="help-step-number">05</span>
             <div><h3>Получите смету</h3><p>Зайдите во вкладку «Смета», проверьте итоги по сечениям и нажмите «Отчёт PDF» или «CSV». Перед покупкой уточните длины по месту.</p></div>
           </article>
         </div>
@@ -278,6 +284,7 @@
               <div><dt>Двойной клик / Enter</dt><dd>завершить комнату или трассу</dd></div>
               <div><dt>Ctrl + Z / Ctrl + Y</dt><dd>отменить / повторить</dd></div>
               <div><dt>Delete</dt><dd>удалить выбранное</dd></div>
+              <div><dt>Перетаскивание проёма</dt><dd>сдвиг вдоль стены</dd></div>
             </dl>
           </section>
           <section>
@@ -290,7 +297,7 @@
         <div class="help-note"><span data-icon="info"></span> Приложение не подбирает сечение кабеля и автоматические выключатели. Сечения вы задаёте сами — программа считает только метраж и формирует смету.</div>
       </div>
       <footer class="modal-foot">
-        <span>Версия 1.0 · офлайн-PWA</span>
+        <span>Версия 1.0.3 · офлайн-PWA</span>
         <button class="btn btn-primary btn-sm" type="button" data-close-dialog>Понятно</button>
       </footer>
     </div>
