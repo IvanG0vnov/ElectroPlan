@@ -57,6 +57,9 @@
         <button class="btn btn-primary" type="button" id="reportBtn">
           <span data-icon="report"></span> <span class="desktop-only">Отчёт</span>
         </button>
+        <button class="icon-btn" type="button" id="elevationsBtn" title="Развёртки стен" aria-label="Развёртки стен">
+          <span data-icon="elevation"></span>
+        </button>
         <button class="icon-btn" type="button" id="helpBtn" title="Как пользоваться" aria-label="Как пользоваться">
           <span data-icon="help"></span>
         </button>
@@ -263,15 +266,15 @@
           </article>
           <article class="help-step">
             <span class="help-step-number">03</span>
-            <div><h3>Расставьте электрику</h3><p>Выберите розетку, выключатель, светильник или щит в левой панели и нажмите на план. Высоту установки можно изменить в свойствах.</p></div>
+            <div><h3>Расставьте электрику</h3><p>Выберите розетку, выключатель (в том числе проходной или перекрёстный), светильник, интернет-розетку или щит и нажмите на план. Количество постов задаётся в свойствах устройства.</p></div>
           </article>
           <article class="help-step">
             <span class="help-step-number">04</span>
-            <div><h3>Проложите трассы</h3><p>Инструмент «Кабель»: начните у устройства, добавьте изгибы, завершите у второго устройства. Двойной клик по готовой трассе добавляет точку.</p></div>
+            <div><h3>Проложите трассы</h3><p>Инструмент «Кабель» — для силовых линий, «UTP-кабель» — для витой пары. Начните у устройства, добавьте изгибы, завершите у второго устройства. Двойной клик по трассе добавляет точку.</p></div>
           </article>
           <article class="help-step">
             <span class="help-step-number">05</span>
-            <div><h3>Получите смету</h3><p>Зайдите во вкладку «Смета», проверьте итоги по сечениям и нажмите «Отчёт PDF» или «CSV». Перед покупкой уточните длины по месту.</p></div>
+            <div><h3>Получите смету и развёртки</h3><p>Во вкладке «Смета» проверьте итоги по сечениям и маркам UTP, нажмите «Отчёт PDF» или «CSV». Кнопка «Развёртки» строит виды каждой стены с размерами от пола и печатью.</p></div>
           </article>
         </div>
         <div class="help-grid">
@@ -297,7 +300,7 @@
         <div class="help-note"><span data-icon="info"></span> Приложение не подбирает сечение кабеля и автоматические выключатели. Сечения вы задаёте сами — программа считает только метраж и формирует смету.</div>
       </div>
       <footer class="modal-foot">
-        <span>Версия 1.0.3 · офлайн-PWA</span>
+        <span>Версия 1.1.0 · офлайн-PWA</span>
         <button class="btn btn-primary btn-sm" type="button" data-close-dialog>Понятно</button>
       </footer>
     </div>
@@ -326,6 +329,23 @@
     </header>
     <div class="report-scroll">
       <div class="report-preview" id="reportPreview"></div>
+    </div>
+  </section>
+
+  <section class="elevations-overlay" id="elevationsOverlay" hidden aria-label="Развёртки стен для печати">
+    <header class="elevations-toolbar">
+      <button class="btn btn-ghost" type="button" id="elevationsCloseBtn"><span data-icon="select"></span> Назад к плану</button>
+      <div class="elevations-toolbar-title">
+        <span class="eyebrow">Документ</span>
+        <strong id="elevationsTitle">Развёртки стен</strong>
+      </div>
+      <div class="elevations-toolbar-actions">
+        <span class="elevations-count" id="elevationsCount"></span>
+        <button class="btn btn-primary" type="button" id="elevationsPrintBtn"><span data-icon="printer"></span> Печать / PDF</button>
+      </div>
+    </header>
+    <div class="elevations-scroll">
+      <div class="elevations-preview" id="elevationsPreview"></div>
     </div>
   </section>
 

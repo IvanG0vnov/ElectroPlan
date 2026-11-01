@@ -318,6 +318,7 @@ export class PlanEditor {
     }
 
     this.pointers.set(event.pointerId, { screen, world });
+    this.lastPointerType = event.pointerType;
 
     if (this.pointers.size === 2) {
       this.startPinch();
@@ -499,9 +500,15 @@ export class PlanEditor {
       this.updateHover(world, screen);
     } else if (active.kind === "click" && !active.moved) {
       if (!this.suppressClick) this.handleToolClick(active.startWorld, event);
-    } else if (active.kind === "dragPoint" && active.started) {
-      this.finishDrag(active);
-      this.updateHover(world, screen);
+    } else if (active.kind === "selectOnly") {
+      if (!active.moved) this.callbacks.onSelectTap?.(state.selection);
+    } else if (active.kind === "dragPoint") {
+      if (active.started) {
+        this.finishDrag(active);
+        this.updateHover(world, screen);
+      } else {
+        this.callbacks.onSelectTap?.(state.selection);
+      }
     }
 
     if (this.pointers.size === 0) this.suppressClick = false;
@@ -540,7 +547,7 @@ export class PlanEditor {
 
   handleDoubleClick(event) {
     if (isEditableTarget(event.target)) return;
-    if (this.draft?.kind === "room" || this.draft?.kind === "cable") {
+    if (this.draft?.kind === "room" || this.draft?.kind === "cable" || this.draft?.kind === "utp") {
       event.preventDefault();
       this.finishDraft();
       return;
@@ -565,10 +572,14 @@ export class PlanEditor {
 
   handleContextMenu(event) {
     event.preventDefault();
+    // На сенсорном экране долгое нажатие не должно сбрасывать выделение
+    // и тем более открывать системное меню во время перетаскивания.
+    if (this.active || this.pointers.size > 0) return;
     if (this.draft) {
       this.cancelDraft();
       return;
     }
+    if (this.lastPointerType === "touch") return;
     if (state.selection) select(null);
   }
 
@@ -740,7 +751,7 @@ export class PlanEditor {
     const tool = state.tool;
     const isDeviceTool = tool === "device";
     const isOpeningTool = tool === "door" || tool === "window";
-    const isDrawTool = tool === "wall" || tool === "room" || tool === "cable";
+    const isDrawTool = tool === "wall" || tool === "room" || tool === "cable" || tool === "utp";
 
     let snap = null;
     if (isOpeningTool) {
@@ -752,18 +763,18 @@ export class PlanEditor {
     } else if (isDeviceTool) {
       this.openingPreview = null;
       snap = this.computeSnap(world, { includeVertices: false, includeWalls: false });
-      this.draft = { kind: "device", current: snap.point };
+      this.draft = { kind: "device", current: snap.point, gangs: state.deviceGangs };
       this.snap = snap;
     } else if (isDrawTool) {
       this.openingPreview = null;
       const options = {
-        includeDevices: tool === "cable",
-        includeWalls: tool === "room" || tool === "cable",
+        includeDevices: tool === "cable" || tool === "utp",
+        includeWalls: tool === "room" || tool === "cable" || tool === "utp",
         includeVertices: true
       };
       snap = this.computeSnap(world, options);
       let point = snap.point;
-      if (this.draft && (this.draft.kind === "wall" || this.draft.kind === "room" || this.draft.kind === "cable")) {
+      if (this.draft && (this.draft.kind === "wall" || this.draft.kind === "room" || this.draft.kind === "cable" || this.draft.kind === "utp")) {
         const origin = this.draft.kind === "wall"
           ? this.draft.start
           : this.draft.points[this.draft.points.length - 1];
@@ -928,6 +939,7 @@ export class PlanEditor {
     if (state.tool === "wall") this.addWallPoint(world, event);
     else if (state.tool === "room") this.addRoomPoint(world, event);
     else if (state.tool === "cable") this.addCablePoint(world, event);
+    else if (state.tool === "utp") this.addCablePoint(world, event);
     else if (state.tool === "door" || state.tool === "window") this.addOpening(world);
     else if (state.tool === "device") this.addDevice(world, event);
   }
@@ -938,7 +950,7 @@ export class PlanEditor {
     if (event.shiftKey) {
       let origin = null;
       if (this.draft?.kind === "wall") origin = this.draft.start;
-      else if (this.draft?.kind === "room" || this.draft?.kind === "cable") {
+      else if (this.draft?.kind === "room" || this.draft?.kind === "cable" || this.draft?.kind === "utp") {
         origin = this.draft.points[this.draft.points.length - 1];
       }
       if (origin) point = this.snapOrthogonal(origin, point);
@@ -996,6 +1008,7 @@ export class PlanEditor {
   }
 
   addCablePoint(world, event) {
+    const utp = state.tool === "utp";
     const { point } = this.currentClickPoint(world, event, {
       includeDevices: true, includeVertices: true, includeWalls: true
     });
@@ -1008,7 +1021,7 @@ export class PlanEditor {
         startDeviceId = device.id;
       }
       this.draft = {
-        kind: "cable",
+        kind: utp ? "utp" : "cable",
         points: [startPoint],
         current: startPoint,
         startDeviceId
@@ -1088,6 +1101,7 @@ export class PlanEditor {
       y: point.y,
       rotation: 0,
       mountHeight: info.mountHeight,
+      gangs: info.gangs ? Math.min(4, Math.max(1, Math.round(Number(state.deviceGangs) || 1))) : 1,
       circuit: "",
       note: ""
     };
@@ -1095,7 +1109,7 @@ export class PlanEditor {
       const targetFloor = project.floors.find((item) => item.id === project.activeFloorId);
       targetFloor.devices.push(device);
     }, { selectAfter: { type: "device", id: device.id } });
-    this.draft = { kind: "device", current: point };
+    this.draft = { kind: "device", current: point, gangs: state.deviceGangs };
     this.notifyDraft();
     this.callbacks.onToast?.(`${info.label}: добавлено`);
     this.requestRender();
@@ -1104,7 +1118,7 @@ export class PlanEditor {
   finishDraft() {
     if (!this.draft) return false;
     if (this.draft.kind === "room") return this.finishRoom();
-    if (this.draft.kind === "cable") return this.finishCable();
+    if (this.draft.kind === "cable" || this.draft.kind === "utp") return this.finishCable();
     if (this.draft.kind === "wall") {
       this.callbacks.onToast?.("Укажите конечную точку стены", "info");
       return false;
@@ -1146,6 +1160,7 @@ export class PlanEditor {
   }
 
   finishCable() {
+    const utp = this.draft.kind === "utp";
     const points = cleanPoints(this.draft.points);
     if (points.length < 2) {
       this.callbacks.onToast?.("Для трассы нужно минимум две точки", "warning");
@@ -1171,15 +1186,18 @@ export class PlanEditor {
     else if (startDevice) name = `${startDevice.name} → трасса ${number}`;
     else if (endDevice) name = `Трасса ${number} → ${endDevice.name}`;
     else name = `Трасса ${number}`;
+    if (utp) name = `UTP · ${name}`;
     const settings = project.settings;
     const cable = {
       id: createId("cab"),
       name,
-      section: Number(settings.defaultSection),
-      cores: Number(settings.defaultCores),
+      kind: utp ? "utp" : "power",
+      category: settings.defaultUtpCategory,
+      section: utp ? 0 : Number(settings.defaultSection),
+      cores: utp ? 0 : Number(settings.defaultCores),
       points,
       routeHeight: Number(settings.defaultRouteHeight),
-      circuit: endDevice?.circuit || startDevice?.circuit || "",
+      circuit: endDevice?.circuit || startDevice?.circuit || (utp ? "Слаботочка" : ""),
       note: "",
       reservePercent: null,
       startDeviceId: startDevice?.id || null,
@@ -1193,7 +1211,7 @@ export class PlanEditor {
     setDrawing(false);
     this.notifyDraft();
     this.snap = null;
-    this.callbacks.onToast?.(`Трасса «${name}» добавлена`);
+    this.callbacks.onToast?.(utp ? `UTP-трасса «${name}» добавлена` : `Трасса «${name}» добавлена`);
     this.requestRender();
     return true;
   }
@@ -1520,6 +1538,10 @@ export class PlanEditor {
       title = "Кабельная трасса";
       canFinish = this.draft.points.length >= 2;
       hint = `Точек: ${this.draft.points.length}. Клик — изгиб, двойной клик или Enter — завершить.`;
+    } else if (this.draft?.kind === "utp") {
+      title = "UTP-трасса";
+      canFinish = this.draft.points.length >= 2;
+      hint = `Точек: ${this.draft.points.length}. Клик — изгиб, двойной клик или Enter — завершить.`;
     } else if (tool === "wall") {
       title = "Стена";
       hint = "Кликните начало и конец стены. Привязка к сетке включена.";
@@ -1529,6 +1551,9 @@ export class PlanEditor {
     } else if (tool === "cable") {
       title = "Кабельная трасса";
       hint = "Начните у устройства, добавьте изгибы и завершите у устройства.";
+    } else if (tool === "utp") {
+      title = "UTP-трасса";
+      hint = "Начните у щита или интернет-розетки, добавьте изгибы и завершите у устройства.";
     } else if (tool === "device") {
       title = getDeviceType(state.deviceType).label;
       hint = "Нажмите на плане, чтобы разместить устройство.";

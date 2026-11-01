@@ -3,6 +3,7 @@
 import {
   DEVICE_TYPES,
   OPENING_TYPES,
+  UTP_CATEGORIES,
   createDemoProject,
   createId,
   createProject,
@@ -42,6 +43,7 @@ import {
   renderReport,
   sanitizeFilename
 } from "./report.js";
+import { renderElevations } from "./elevations.js";
 import { deviceIcon, escapeHtml, icon } from "./icons.js";
 
 const TOOLS = [
@@ -50,14 +52,16 @@ const TOOLS = [
   { id: "room", label: "Комната", icon: "room" },
   { id: "door", label: "Дверь", icon: "door" },
   { id: "window", label: "Окно", icon: "window" },
-  { id: "cable", label: "Кабель", icon: "cable" }
+  { id: "cable", label: "Кабель", icon: "cable" },
+  { id: "utp", label: "UTP-кабель", icon: "network" }
 ];
 
 const DEVICE_UI_COLORS = {
   socket: "#38bdf8",
-  socketDouble: "#38bdf8",
   switch: "#fbbf24",
-  switchDouble: "#fbbf24",
+  switchPass: "#fbbf24",
+  switchCross: "#c4b5fd",
+  network: "#2dd4bf",
   light: "#facc15",
   lightWall: "#facc15",
   panel: "#e2e8f0",
@@ -106,6 +110,8 @@ function cacheElements() {
     "helpDialog", "installAppBtn", "confirmDialog", "confirmTitle", "confirmText",
     "confirmCancelBtn", "confirmOkBtn",
     "reportOverlay", "reportCloseBtn", "reportCsvBtn", "reportPrintBtn", "reportPreview",
+    "elevationsBtn", "elevationsOverlay", "elevationsCloseBtn", "elevationsPrintBtn",
+    "elevationsPreview", "elevationsCount",
     "projectImportInput", "underlayImportInput", "toastRegion"
   ];
   for (const id of ids) els[id] = $(id);
@@ -589,6 +595,9 @@ async function handleAction(action, target) {
     case "open-report":
       openReport();
       break;
+    case "open-elevations":
+      openElevations();
+      break;
     case "export-json":
       exportProjectFile();
       break;
@@ -701,6 +710,7 @@ function openHelp() {
 
 function openReport() {
   if (!state.project) return;
+  if (!els.elevationsOverlay.hidden) closeElevations();
   renderReport(els.reportPreview, state.project);
   els.reportOverlay.hidden = false;
   document.body.classList.add("report-open");
@@ -711,6 +721,24 @@ function closeReport() {
   els.reportOverlay.hidden = true;
   document.body.classList.remove("report-open");
   els.reportBtn.focus();
+}
+
+function openElevations() {
+  const floor = activeFloor();
+  if (!state.project || !floor) return;
+  if (!els.reportOverlay.hidden) closeReport();
+  renderElevations(els.elevationsPreview, { project: state.project, floor });
+  const wallCount = floor.walls.length;
+  els.elevationsCount.textContent = `${wallCount} ${pluralRu(wallCount, "стена", "стены", "стен")} · ${floor.name}`;
+  els.elevationsOverlay.hidden = false;
+  document.body.classList.add("elevations-open");
+  els.elevationsCloseBtn.focus();
+}
+
+function closeElevations() {
+  els.elevationsOverlay.hidden = true;
+  document.body.classList.remove("elevations-open");
+  els.elevationsBtn.focus();
 }
 
 // --- Обработчики изменения свойств ---------------------------------------
@@ -780,12 +808,17 @@ function handleInspectorChange(event) {
         const oldDefault = getDeviceType(oldType).mountHeight;
         const wasDefaultName = item.name === getDeviceType(oldType).defaultName;
         item.type = rawValue;
+        if (!getDeviceType(rawValue).gangs) item.gangs = 1;
         if (Math.abs(Number(item.mountHeight) - oldDefault) < 1e-6) {
           item.mountHeight = getDeviceType(rawValue).mountHeight;
         }
         if (wasDefaultName) item.name = getDeviceType(rawValue).defaultName;
       } else if (field === "name") {
         item.name = String(rawValue).trim() || getDeviceType(item.type).defaultName;
+      } else if (field === "gangs") {
+        const number = parseNumber(rawValue, item.gangs ?? 1);
+        if (!Number.isFinite(number)) return false;
+        item.gangs = clamp(Math.round(number), 1, 4);
       } else if (field === "x" || field === "y" || field === "mountHeight") {
         const fallback = item[field];
         const number = parseNumber(rawValue, fallback);
@@ -863,6 +896,25 @@ function handleInspectorChange(event) {
     if (selection.type === "cable") {
       if (field === "name") {
         item.name = String(rawValue).trim() || "Трасса";
+      } else if (field === "kind") {
+        const kind = rawValue === "utp" ? "utp" : "power";
+        item.kind = kind;
+        if (kind === "utp") {
+          item.section = 0;
+          item.cores = 0;
+          item.category = UTP_CATEGORIES.some((entry) => entry.value === item.category)
+            ? item.category
+            : project.settings.defaultUtpCategory;
+        } else {
+          const section = Number(item.section);
+          const cores = Number(item.cores);
+          if (!(section > 0)) item.section = Number(project.settings.defaultSection);
+          if (![2, 3, 5].includes(cores)) item.cores = Number(project.settings.defaultCores);
+        }
+      } else if (field === "category") {
+        item.category = UTP_CATEGORIES.some((entry) => entry.value === rawValue)
+          ? rawValue
+          : project.settings.defaultUtpCategory;
       } else if (field === "section" || field === "cores") {
         const number = parseNumber(rawValue, item[field]);
         if (!Number.isFinite(number)) return false;
@@ -1007,6 +1059,7 @@ function bindEvents() {
     if (isMobile()) openRightPanel();
   });
   els.reportBtn.addEventListener("click", openReport);
+  els.elevationsBtn.addEventListener("click", openElevations);
   [els.helpBtn, els.helpBtnSide].forEach((button) => button.addEventListener("click", openHelp));
 
   els.newProjectForm.addEventListener("submit", async (event) => {
@@ -1043,6 +1096,8 @@ function bindEvents() {
 
   els.reportCloseBtn.addEventListener("click", closeReport);
   els.reportPrintBtn.addEventListener("click", () => window.print());
+  els.elevationsCloseBtn.addEventListener("click", closeElevations);
+  els.elevationsPrintBtn.addEventListener("click", () => window.print());
   els.reportCsvBtn.addEventListener("click", () => {
     downloadCsv(state.project);
     showToast("Смета выгружена в CSV");
@@ -1065,6 +1120,12 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       closeReport();
+      return;
+    }
+    if (!els.elevationsOverlay.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeElevations();
       return;
     }
     if (isMobile() && (els.leftPanel.classList.contains("open") || els.rightPanel.classList.contains("open"))) {
@@ -1097,14 +1158,18 @@ function bindStoreEvents() {
     scheduleUi(reason === "load" ? 0 : 40);
     syncToolUi();
     updateDocumentTitle();
+    if (!els.elevationsOverlay.hidden) {
+      const floor = activeFloor();
+      if (floor) {
+        renderElevations(els.elevationsPreview, { project: state.project, floor });
+        const wallCount = floor.walls.length;
+        els.elevationsCount.textContent = `${wallCount} ${pluralRu(wallCount, "стена", "стены", "стен")} · ${floor.name}`;
+      }
+    }
   });
 
   on("selection", () => {
     scheduleUi(0);
-    if (isMobile() && state.selection && state.tool === "select") {
-      setTab("properties");
-      openRightPanel();
-    }
     if (els.rightScroll) els.rightScroll.scrollTop = 0;
   });
 
@@ -1212,7 +1277,12 @@ async function init() {
   editor = new PlanEditor(els.planCanvas, {
     onToast: (message, type) => showToast(message, type),
     onDraftState: updateDraftHint,
-    onCursor: updateCursor
+    onCursor: updateCursor,
+    onSelectTap: (selection) => {
+      if (!isMobile() || !selection || state.tool !== "select") return;
+      setTab("properties");
+      openRightPanel();
+    }
   });
 
   bindStoreEvents();

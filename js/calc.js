@@ -2,6 +2,38 @@
 // сечение задаёт пользователь, программа только считает метраж.
 
 import { polylineLength } from "./geometry.js";
+import { UTP_CATEGORIES, getCableKind, getSectionInfo, getUtpCategory } from "./model.js";
+
+function metricsSpecKey(metrics) {
+  return metrics.kind === "utp"
+    ? `utp|${metrics.category}`
+    : `power|${metrics.section}|${metrics.cores}`;
+}
+
+function finalizedBySpec(map) {
+  const items = [...map.values()];
+  for (const item of items) {
+    const [kind, first, second] = item.key.split("|");
+    item.kind = kind;
+    if (kind === "utp") {
+      const category = UTP_CATEGORIES.find((entry) => entry.value === first) || UTP_CATEGORIES[1];
+      item.category = category.value;
+      item.label = category.label;
+      item.color = category.color;
+      item.section = 0;
+      item.cores = 0;
+    } else {
+      item.section = Number(first);
+      item.cores = Number(second);
+      item.label = `${item.cores}×${String(item.section).replace(".", ",")}`;
+      item.color = getSectionInfo(item.section).color;
+    }
+  }
+  return items.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "power" ? -1 : 1;
+    return a.section - b.section || a.cores - b.cores || a.label.localeCompare(b.label, "ru");
+  });
+}
 
 export function cableMetrics(cable, floor, settings = {}) {
   const plan = polylineLength(cable.points);
@@ -38,8 +70,10 @@ export function cableMetrics(cable, floor, settings = {}) {
   const reserve = subtotal * (reservePercent / 100);
   const total = subtotal + reserve;
 
-  const section = Number(cable.section ?? settings.defaultSection ?? 2.5);
-  const cores = Number(cable.cores ?? settings.defaultCores ?? 3);
+  const kind = getCableKind(cable);
+  const category = kind === "utp" ? getUtpCategory(cable).value : "";
+  const section = kind === "utp" ? 0 : Number(cable.section ?? settings.defaultSection ?? 2.5);
+  const cores = kind === "utp" ? 0 : Number(cable.cores ?? settings.defaultCores ?? 3);
 
   return {
     plan,
@@ -52,6 +86,8 @@ export function cableMetrics(cable, floor, settings = {}) {
     reservePercent,
     reserve,
     total,
+    kind,
+    category,
     section,
     cores,
     startDevice,
@@ -92,8 +128,8 @@ export function summarizeProject(project) {
   for (const entry of floors) {
     for (const route of entry.summary.routes) {
       const { metrics, cable } = route;
-      add(bySection, metrics.section, metrics);
-      add(bySpec, `${metrics.section}|${metrics.cores}`, metrics);
+      if (metrics.kind === "power") add(bySection, metrics.section, metrics);
+      add(bySpec, metricsSpecKey(metrics), metrics);
       add(byCircuit, String(cable.circuit || "").trim() || "Без цепи", metrics);
       totals.routes += 1;
       totals.plan += metrics.plan;
@@ -106,18 +142,13 @@ export function summarizeProject(project) {
   }
 
   for (const item of bySection.values()) item.section = Number(item.key);
-  for (const item of bySpec.values()) {
-    const [section, cores] = item.key.split("|").map(Number);
-    item.section = section;
-    item.cores = cores;
-  }
   for (const item of byCircuit.values()) item.circuit = item.key;
 
   return {
     floors,
     totals,
     bySection: [...bySection.values()].sort((a, b) => a.section - b.section),
-    bySpec: [...bySpec.values()].sort((a, b) => a.section - b.section || a.cores - b.cores),
+    bySpec: finalizedBySpec(bySpec),
     byCircuit: [...byCircuit.values()].sort((a, b) => a.circuit.localeCompare(b.circuit, "ru"))
   };
 }
@@ -161,8 +192,8 @@ export function summarize(project, floor) {
 
   for (const route of routes) {
     const { metrics, cable } = route;
-    add(bySection, metrics.section, route);
-    add(bySpec, `${metrics.section}|${metrics.cores}`, route);
+    if (metrics.kind === "power") add(bySection, metrics.section, route);
+    add(bySpec, metricsSpecKey(metrics), route);
     const circuit = String(cable.circuit || "").trim() || "Без цепи";
     add(byCircuit, circuit, route);
 
@@ -178,11 +209,6 @@ export function summarize(project, floor) {
   for (const item of bySection.values()) {
     item.section = Number(item.key);
   }
-  for (const item of bySpec.values()) {
-    const [section, cores] = item.key.split("|").map(Number);
-    item.section = section;
-    item.cores = cores;
-  }
   for (const item of byCircuit.values()) {
     item.circuit = item.key;
   }
@@ -191,7 +217,7 @@ export function summarize(project, floor) {
     routes,
     totals,
     bySection: [...bySection.values()].sort((a, b) => a.section - b.section),
-    bySpec: [...bySpec.values()].sort((a, b) => a.section - b.section || a.cores - b.cores),
+    bySpec: finalizedBySpec(bySpec),
     byCircuit: [...byCircuit.values()].sort((a, b) => a.circuit.localeCompare(b.circuit, "ru"))
   };
 }

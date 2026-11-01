@@ -859,6 +859,9 @@ textarea {
   height: 100%;
   display: block;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   outline: none;
 }
 
@@ -1610,11 +1613,18 @@ textarea {
 
 .summary-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .summary-actions .btn {
-  flex: 1;
+  flex: 1 1 40%;
+}
+
+.summary-split {
+  margin-top: -8px !important;
+  color: #93c5fd !important;
+  font-size: 9.5px !important;
 }
 
 .summary-section {
@@ -2629,12 +2639,214 @@ textarea {
   letter-spacing: 0.06em;
 }
 
+/* Развёртки стен -------------------------------------------------------- */
+
+.elevations-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: #dde5ef;
+  display: flex;
+  flex-direction: column;
+}
+
+.elevations-toolbar {
+  flex: 0 0 62px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 20px;
+  backdrop-filter: blur(12px);
+  z-index: 2;
+}
+
+.elevations-toolbar-title {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.elevations-toolbar-title strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.elevations-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.elevations-count {
+  color: #64748b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.elevations-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 28px;
+}
+
+.elevations-preview {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.elevations-empty {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.14);
+  padding: 54px 24px;
+  text-align: center;
+  color: #64748b;
+}
+
+.elevations-empty .icon {
+  width: 42px;
+  height: 42px;
+  color: #3b82f6;
+  margin-bottom: 10px;
+}
+
+.elevations-empty h3 {
+  margin: 0 0 6px;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.elevations-empty p {
+  margin: 0 auto;
+  max-width: 460px;
+  font-size: 12px;
+}
+
+.elevation-sheet {
+  background: #fff;
+  color: #1e293b;
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.15);
+  padding: 22px 26px 16px;
+}
+
+.elevation-sheet-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.elevation-kicker {
+  display: block;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #2563eb;
+  margin-bottom: 2px;
+}
+
+.elevation-sheet-head h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 21px;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.elevation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 16px;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.elevation-drawing {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.elevation-drawing .dimension line,
+.elevation-drawing .dimension path {
+  fill: none;
+  stroke: #64748b;
+  stroke-width: 1;
+}
+
+.elevation-drawing .dimension text {
+  fill: #475569;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+.elevation-drawing .opening-label {
+  fill: #0f172a;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.elevation-drawing .opening-size {
+  fill: #64748b;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 9px;
+  text-anchor: middle;
+}
+
+.elevation-drawing .device-label {
+  fill: #0f172a;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.elevation-drawing .device-height {
+  fill: #64748b;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 8px;
+  text-anchor: middle;
+}
+
+.elevation-drawing .sheet-note {
+  fill: #94a3b8;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 8px;
+  text-anchor: end;
+}
+
+.elevation-sheet-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 6px;
+  padding-top: 8px;
+  color: #64748b;
+  font-size: 9px;
+}
+
 /* Скроллбары ------------------------------------------------------------ */
 
 .side-scroll,
 .right-scroll,
 .modal-body,
-.report-scroll {
+.report-scroll,
+.elevations-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
 }
@@ -2642,7 +2854,8 @@ textarea {
 .side-scroll::-webkit-scrollbar,
 .right-scroll::-webkit-scrollbar,
 .modal-body::-webkit-scrollbar,
-.report-scroll::-webkit-scrollbar {
+.report-scroll::-webkit-scrollbar,
+.elevations-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
@@ -2650,7 +2863,8 @@ textarea {
 .side-scroll::-webkit-scrollbar-thumb,
 .right-scroll::-webkit-scrollbar-thumb,
 .modal-body::-webkit-scrollbar-thumb,
-.report-scroll::-webkit-scrollbar-thumb {
+.report-scroll::-webkit-scrollbar-thumb,
+.elevations-scroll::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.42);
   border-radius: 20px;
   border: 2px solid transparent;
@@ -2791,6 +3005,62 @@ textarea {
     height: 34px;
     padding: 0;
     border-radius: 9px;
+  }
+
+  .top-actions #elevationsBtn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .elevations-toolbar {
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 9px 12px;
+  }
+
+  .elevations-toolbar-title {
+    display: none;
+  }
+
+  .elevations-toolbar-actions {
+    gap: 8px;
+  }
+
+  .elevations-count {
+    font-size: 10px;
+  }
+
+  .elevations-scroll {
+    padding: 12px;
+  }
+
+  .elevations-preview {
+    gap: 14px;
+  }
+
+  .elevation-sheet {
+    padding: 14px 12px 10px;
+  }
+
+  .elevation-sheet-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .elevation-meta {
+    justify-content: flex-start;
+    gap: 5px 12px;
+  }
+
+  .elevation-sheet-head h2 {
+    font-size: 17px;
+  }
+
+  .elevation-sheet-foot {
+    flex-direction: column;
+    gap: 3px;
   }
 
   .top-actions #reportBtn .icon {
@@ -3198,12 +3468,17 @@ textarea {
 
 /* Печать ---------------------------------------------------------------- */
 
-@media print {
-  @page {
-    size: A4 portrait;
-    margin: 11mm;
-  }
+@page {
+  size: A4 portrait;
+  margin: 11mm;
+}
 
+@page elevation-sheet {
+  size: A4 landscape;
+  margin: 10mm;
+}
+
+@media print {
   html,
   body {
     height: auto !important;
@@ -3212,7 +3487,8 @@ textarea {
     background: #fff !important;
   }
 
-  body > *:not(.report-overlay) {
+  body.report-open > *:not(.report-overlay),
+  body.elevations-open > *:not(.elevations-overlay) {
     display: none !important;
   }
 
@@ -3282,6 +3558,64 @@ textarea {
   .report-card.highlight,
   .report-table th,
   .report-logo {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .elevations-overlay {
+    position: static !important;
+    display: block !important;
+    background: #fff !important;
+    inset: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    z-index: auto !important;
+  }
+
+  .elevations-toolbar {
+    display: none !important;
+  }
+
+  .elevations-scroll {
+    overflow: visible !important;
+    padding: 0 !important;
+    height: auto !important;
+  }
+
+  .elevations-preview {
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .elevation-sheet {
+    page: elevation-sheet;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    break-after: page;
+  }
+
+  .elevation-sheet:last-child {
+    break-after: auto;
+  }
+
+  .elevation-drawing {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .elevation-drawing .dimension text,
+  .elevation-drawing .opening-label,
+  .elevation-drawing .opening-size,
+  .elevation-drawing .device-label,
+  .elevation-drawing .device-height,
+  .elevation-drawing .sheet-note {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }

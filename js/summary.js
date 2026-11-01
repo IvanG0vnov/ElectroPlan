@@ -1,22 +1,21 @@
 // Правая вкладка «Смета»: итоги по проекту, сечениям и трассам этажа.
 
 import { summarizeProject } from "./calc.js";
-import { cableSpecLabel, getSectionInfo, sectionLabel } from "./model.js";
+import { cableSpecLabel, cableColor } from "./model.js";
 import { formatNumber, pluralRu } from "./geometry.js";
 import { escapeHtml, icon } from "./icons.js";
 
 function sectionRows(data) {
   const total = data.totals.total || 1;
   return data.bySection.map((item) => {
-    const info = getSectionInfo(item.section);
     const share = Math.max(0, Math.min(100, (item.total / total) * 100));
     return `
       <div class="section-row">
         <div class="section-row-head">
-          <span class="section-name"><i class="color-dot" style="--dot:${info.color}"></i>${info.label}</span>
+          <span class="section-name"><i class="color-dot" style="--dot:${item.color}"></i>${item.label}</span>
           <span class="section-meters">${formatNumber(item.total)} м</span>
         </div>
-        <div class="bar-track"><span class="bar-fill" style="width:${share.toFixed(1)}%; --bar:${info.color}"></span></div>
+        <div class="bar-track"><span class="bar-fill" style="width:${share.toFixed(1)}%; --bar:${item.color}"></span></div>
         <div class="section-row-foot">
           <span>${item.routes} ${pluralRu(item.routes, "трасса", "трассы", "трасс")}</span>
           <span>${formatNumber(share, 0)}% метража</span>
@@ -27,16 +26,13 @@ function sectionRows(data) {
 }
 
 function specRows(data) {
-  return data.bySpec.map((item) => {
-    const info = getSectionInfo(item.section);
-    return `
-      <div class="spec-row">
-        <span class="spec-chip" style="--chip:${info.color}">${item.cores}×${String(item.section).replace(".", ",")}</span>
-        <span class="spec-route-count">${item.routes} тр.</span>
-        <strong>${formatNumber(item.total)} м</strong>
-      </div>
-    `;
-  }).join("");
+  return data.bySpec.map((item) => `
+    <div class="spec-row">
+      <span class="spec-chip" style="--chip:${item.color}">${escapeHtml(item.label)}</span>
+      <span class="spec-route-count">${item.routes} тр.</span>
+      <strong>${formatNumber(item.total)} м</strong>
+    </div>
+  `).join("");
 }
 
 function floorRows(data) {
@@ -54,6 +50,10 @@ export function renderSummary(container, { project, floor, selection }) {
   const activeEntry = data.floors.find((entry) => entry.floor.id === floor.id) || data.floors[0];
   const activeRoutes = activeEntry?.summary.routes || [];
   const empty = data.totals.routes === 0;
+  const utpTotal = data.bySpec
+    .filter((item) => item.kind === "utp")
+    .reduce((sum, item) => sum + item.total, 0);
+  const powerTotal = Math.max(0, data.totals.total - utpTotal);
 
   container.innerHTML = `
     <div class="summary-panel">
@@ -64,9 +64,11 @@ export function renderSummary(container, { project, floor, selection }) {
           <strong>${formatNumber(data.totals.total)}</strong><span>м</span>
         </div>
         <p>${data.totals.routes} ${pluralRu(data.totals.routes, "трасса", "трассы", "трасс")} · ${data.floors.length} эт. · запас ${formatNumber(project.settings.reservePercent, 0)}%</p>
+        <p class="summary-split">Силовой ${formatNumber(powerTotal)} м · UTP ${formatNumber(utpTotal)} м</p>
         <div class="summary-actions">
           <button class="btn btn-light btn-sm" type="button" data-action="export-csv">${icon("download")} CSV</button>
           <button class="btn btn-accent btn-sm" type="button" data-action="open-report">${icon("report")} Отчёт PDF</button>
+          <button class="btn btn-light btn-sm" type="button" data-action="open-elevations">${icon("elevation")} Развёртки</button>
         </div>
       </div>
 
@@ -88,7 +90,7 @@ export function renderSummary(container, { project, floor, selection }) {
         <section class="summary-section">
           <div class="section-heading">
             <h3>По маркам</h3>
-            <span class="section-note">жилы × мм²</span>
+            <span class="section-note">мм² и UTP</span>
           </div>
           <div class="spec-list">${specRows(data)}</div>
         </section>
@@ -107,7 +109,7 @@ export function renderSummary(container, { project, floor, selection }) {
           </div>
           <div class="route-list">
             ${activeRoutes.length ? activeRoutes.map((route) => {
-              const color = getSectionInfo(route.metrics.section).color;
+              const color = cableColor(route.cable);
               const active = selection?.type === "cable" && selection.id === route.cable.id;
               return `
                 <button type="button" class="route-row ${active ? "active" : ""}" data-action="select-cable" data-cable-id="${escapeHtml(route.cable.id)}">

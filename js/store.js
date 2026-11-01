@@ -20,6 +20,7 @@ export const state = {
   project: null,
   tool: "select",
   deviceType: "socket",
+  deviceGangs: 1,
   selection: null,
   view: { scale: 80, offsetX: 0, offsetY: 0 },
   past: [],
@@ -130,6 +131,13 @@ export function setTool(tool, options = {}) {
 export function setDeviceType(deviceType) {
   state.deviceType = deviceType;
   state.tool = "device";
+  emit("tool");
+}
+
+export function setDeviceGangs(gangs) {
+  const number = Math.min(4, Math.max(1, Math.round(Number(gangs)) || 1));
+  if (state.deviceGangs === number) return;
+  state.deviceGangs = number;
   emit("tool");
 }
 
@@ -254,6 +262,7 @@ export function createDevice(type, x, y, extra = {}) {
     y,
     rotation: 0,
     mountHeight: info.mountHeight,
+    gangs: info.gangs ? Number(info.defaultGangs) || 1 : 1,
     circuit: "",
     note: "",
     ...extra

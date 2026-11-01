@@ -19,13 +19,15 @@
     import {
       createDemoProject, cloneProject, normalizeProject, sectionLabel,
       getSectionInfo, cableSpecLabel, getOpeningType, wallLength,
-      openingSpan, normalizeOpening
+      openingSpan, normalizeOpening, getDeviceGangs, deviceTypeLabel,
+      getCableKind, getUtpCategory
     } from "./js/model.js";
     import {
       dist, polylineLength, polygonArea, polygonCentroid, pointInPolygon,
       snapValue, pointToSegment, formatNumber, pluralRu
     } from "./js/geometry.js";
-    import { cableMetrics, summarize } from "./js/calc.js";
+    import { cableMetrics, summarize, summarizeProject } from "./js/calc.js";
+    import { buildElevationsMarkup } from "./js/elevations.js";
 
     const results = [];
     function check(name, fn) {
@@ -157,10 +159,11 @@
       const project = createDemoProject();
       const floor = project.floors[0];
       const s = summarize(project, floor);
-      assert(s.routes.length === 8, "должно быть 8 трасс");
-      assert(s.bySection.length === 2, "должно быть 2 сечения");
+      assert(s.routes.length === 9, "должно быть 9 трасс");
+      assert(s.bySection.length === 2, "должно быть 2 силовых сечения");
       assert(s.bySection.some((item) => item.section === 1.5));
       assert(s.bySection.some((item) => item.section === 2.5));
+      assert(s.bySpec.some((item) => item.kind === "utp"), "должна быть UTP-трасса");
       assert(s.totals.total > 0, "итог должен быть больше нуля");
       return `${s.routes.length} трасс, ${formatNumber(s.totals.total)} м`;
     });
@@ -186,6 +189,52 @@
       assert(getSectionInfo(2.5).color === "#2563eb");
       assert(cableSpecLabel({ section: 2.5, cores: 3 }) === "3×2,5");
       return "1,5 мм²; 3×2,5";
+    });
+
+    check("UTP: марка и группа", () => {
+      const cable = { kind: "utp", category: "Cat6a", section: 0, cores: 0 };
+      assert(getCableKind(cable) === "utp");
+      assert(getUtpCategory(cable).label === "UTP Cat6a");
+      assert(cableSpecLabel(cable) === "UTP Cat6a");
+      const project = summarizeProject(createDemoProject());
+      assert(project.bySpec.filter((item) => item.kind === "utp").length === 1);
+      assert(project.totals.total > 0);
+      return "UTP Cat6a отдельно от силовых";
+    });
+
+    check("Количество постов устройства", () => {
+      assert(getDeviceGangs({ type: "socket", gangs: 3 }) === 3);
+      assert(getDeviceGangs({ type: "switch", gangs: 99 }) === 4);
+      assert(getDeviceGangs({ type: "network", gangs: 4 }) === 1);
+      assert(deviceTypeLabel({ type: "socket", gangs: 2 }) === "Розетка ×2");
+      return "1–4 поста";
+    });
+
+    check("Миграция двойных устройств", () => {
+      const project = normalizeProject({
+        floors: [{
+          walls: [],
+          devices: [
+            { id: "d1", type: "socketDouble", x: 1, y: 1 },
+            { id: "d2", type: "switchDouble", x: 2, y: 1 }
+          ],
+          cables: []
+        }]
+      });
+      const [socket, sw] = project.floors[0].devices;
+      assert(socket.type === "socket" && socket.gangs === 2);
+      assert(sw.type === "switch" && sw.gangs === 2);
+      return "socketDouble → socket ×2";
+    });
+
+    check("Развёртки: лист на каждую стену", () => {
+      const project = createDemoProject();
+      const floor = project.floors[0];
+      const markup = buildElevationsMarkup(project, floor);
+      const sheets = (markup.match(/class="elevation-sheet"/g) || []).length;
+      assert(sheets === floor.walls.length, "число листов должно совпадать с числом стен");
+      assert(markup.includes("Развёртка стены"));
+      return `${sheets} листов`;
     });
 
     check("formatNumber", () => {

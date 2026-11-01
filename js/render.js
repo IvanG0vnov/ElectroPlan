@@ -3,20 +3,25 @@
 
 import {
   DEVICE_TYPES,
+  getDeviceGangs,
   getDeviceType,
   getOpeningType,
   openingSpan,
   getSectionInfo,
-  cableSpecLabel
+  getUtpCategory,
+  cableSpecLabel,
+  cableColor,
+  getCableKind
 } from "./model.js";
 import { polygonArea, boundsOfPoints, formatMeters, formatArea } from "./geometry.js";
 import { cableMetrics } from "./calc.js";
 
 const DEVICE_COLORS = {
   socket: "#0369a1",
-  socketDouble: "#0369a1",
   switch: "#b45309",
-  switchDouble: "#b45309",
+  switchPass: "#b45309",
+  switchCross: "#7c3aed",
+  network: "#0d9488",
   light: "#ca8a04",
   lightWall: "#ca8a04",
   panel: "#111827",
@@ -478,7 +483,7 @@ function drawCableLabel(ctx, cable, metrics, view) {
   drawPill(ctx, text, mid.x, mid.y - 9, {
     font: "600 9px Manrope, system-ui, sans-serif",
     background: "rgba(255,255,255,0.92)",
-    color: getSectionInfo(cable.section).color,
+    color: cableColor(cable),
     border: "rgba(148,163,184,0.28)"
   });
 }
@@ -490,8 +495,9 @@ function drawCables(ctx, floor, view, settings, selectedId, project) {
   for (const cable of floor.cables) {
     if (!cable.points || cable.points.length < 2) continue;
     const points = cable.points.map((point) => worldToScreen(point, view));
-    const section = getSectionInfo(cable.section);
+    const color = cableColor(cable);
     const selected = cable.id === selectedId;
+    const dashed = getCableKind(cable) === "utp";
 
     ctx.strokeStyle = "rgba(255,255,255,0.92)";
     ctx.lineWidth = selected ? 7 : 5;
@@ -502,15 +508,17 @@ function drawCables(ctx, floor, view, settings, selectedId, project) {
     });
     ctx.stroke();
 
-    ctx.strokeStyle = section.color;
+    ctx.strokeStyle = color;
     ctx.globalAlpha = selected ? 1 : 0.88;
     ctx.lineWidth = selected ? 3.5 : 2.4;
+    if (dashed) ctx.setLineDash([8, 4]);
     ctx.beginPath();
     points.forEach((point, index) => {
       if (index === 0) ctx.moveTo(point.x, point.y);
       else ctx.lineTo(point.x, point.y);
     });
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
     if (selected) {
@@ -552,39 +560,70 @@ function drawCables(ctx, floor, view, settings, selectedId, project) {
   }
 }
 
-function drawSocketSymbol(ctx, x, y, r, double = false) {
-  const sockets = double ? [{ x: x - r * 0.42, y }, { x: x + r * 0.42, y }] : [{ x, y }];
-  for (const socket of sockets) {
-    const radius = double ? r * 0.56 : r;
+function drawSocketSymbol(ctx, x, y, r) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, Math.PI * 0.92, Math.PI * 0.08, false);
+  ctx.strokeStyle = DEVICE_COLORS.socket;
+  ctx.lineWidth = 1.7;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, y - r * 0.56);
+  ctx.lineTo(x, y - r * 0.12);
+  ctx.moveTo(x - r * 0.35, y - r * 0.56);
+  ctx.lineTo(x - r * 0.35, y - r * 0.12);
+  ctx.stroke();
+}
+
+function drawSwitchSymbol(ctx, x, y, r, variant = "switch") {
+  const color = DEVICE_COLORS[variant] || DEVICE_COLORS.switch;
+  const radius = r * 0.72;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.7;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + radius * 0.22, y - radius * 0.20);
+  ctx.lineTo(x + radius * 0.88, y - radius * 0.85);
+  ctx.stroke();
+  if (variant === "switchPass") {
+    const d = radius * 0.48;
     ctx.beginPath();
-    ctx.arc(socket.x, socket.y, radius, Math.PI * 0.92, Math.PI * 0.08, false);
-    ctx.strokeStyle = DEVICE_COLORS.socket;
-    ctx.lineWidth = 1.7;
+    ctx.moveTo(x - d, y + radius * 0.52);
+    ctx.lineTo(x + d, y + radius * 0.52);
+    ctx.moveTo(x + d * 0.35, y + radius * 0.28);
+    ctx.lineTo(x + d, y + radius * 0.52);
+    ctx.lineTo(x + d * 0.35, y + radius * 0.76);
     ctx.stroke();
+  } else if (variant === "switchCross") {
+    const d = radius * 0.44;
     ctx.beginPath();
-    ctx.moveTo(socket.x, socket.y - radius * 0.56);
-    ctx.lineTo(socket.x, socket.y - radius * 0.12);
-    ctx.moveTo(socket.x - radius * 0.35, socket.y - radius * 0.56);
-    ctx.lineTo(socket.x - radius * 0.35, socket.y - radius * 0.12);
+    ctx.moveTo(x - d, y - d);
+    ctx.lineTo(x + d, y + d);
+    ctx.moveTo(x + d, y - d);
+    ctx.lineTo(x - d, y + d);
     ctx.stroke();
   }
 }
 
-function drawSwitchSymbol(ctx, x, y, r, double = false) {
-  const color = DEVICE_COLORS.switch;
-  const sockets = double ? [{ x: x - r * 0.38, y }, { x: x + r * 0.38, y }] : [{ x, y }];
-  for (const item of sockets) {
-    const radius = double ? r * 0.42 : r * 0.72;
+function drawNetworkSymbol(ctx, x, y, r) {
+  ctx.strokeStyle = DEVICE_COLORS.network;
+  ctx.lineWidth = 1.7;
+  const width = r * 1.55;
+  const height = r * 0.9;
+  roundRect(ctx, x - width / 2, y - height / 2, width, height, 1.5);
+  ctx.stroke();
+  for (let i = 0; i < 4; i += 1) {
+    const px = x - width * 0.34 + i * width * 0.22;
     ctx.beginPath();
-    ctx.arc(item.x, item.y, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.7;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(item.x + radius * 0.22, item.y - radius * 0.20);
-    ctx.lineTo(item.x + radius * 0.88, item.y - radius * 0.85);
+    ctx.moveTo(px, y - height / 2);
+    ctx.lineTo(px, y - height * 0.08);
     ctx.stroke();
   }
+  ctx.beginPath();
+  ctx.moveTo(x, y + height / 2);
+  ctx.lineTo(x, y + r * 0.92);
+  ctx.stroke();
 }
 
 function drawLightSymbol(ctx, x, y, r, wall = false) {
@@ -658,14 +697,17 @@ function drawDeviceSymbol(ctx, device, screen, radius, muted = false) {
     case "socket":
       drawSocketSymbol(ctx, screen.x, screen.y, radius);
       break;
-    case "socketDouble":
-      drawSocketSymbol(ctx, screen.x, screen.y, radius, true);
-      break;
     case "switch":
       drawSwitchSymbol(ctx, screen.x, screen.y, radius);
       break;
-    case "switchDouble":
-      drawSwitchSymbol(ctx, screen.x, screen.y, radius, true);
+    case "switchPass":
+      drawSwitchSymbol(ctx, screen.x, screen.y, radius, "switchPass");
+      break;
+    case "switchCross":
+      drawSwitchSymbol(ctx, screen.x, screen.y, radius, "switchCross");
+      break;
+    case "network":
+      drawNetworkSymbol(ctx, screen.x, screen.y, radius);
       break;
     case "light":
       drawLightSymbol(ctx, screen.x, screen.y, radius);
@@ -684,6 +726,24 @@ function drawDeviceSymbol(ctx, device, screen, radius, muted = false) {
       ctx.arc(screen.x, screen.y, radius * 0.5, 0, Math.PI * 2);
       ctx.fillStyle = color;
       ctx.fill();
+  }
+
+  const gangs = getDeviceGangs(device);
+  if (gangs > 1) {
+    const bx = screen.x + radius * 0.78;
+    const by = screen.y - radius * 0.78;
+    ctx.beginPath();
+    ctx.arc(bx, by, 5.2, 0, Math.PI * 2);
+    ctx.fillStyle = "#b45309";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = "700 7px Manrope, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(gangs), bx, by + 0.3);
   }
   ctx.restore();
 }
@@ -710,7 +770,9 @@ function drawDevices(ctx, floor, view, settings, selectedId) {
   if (settings.showLabels && view.scale >= 54) {
     for (const device of floor.devices) {
       const screen = worldToScreen(device, view);
-      const name = String(device.name || getDeviceType(device.type).short);
+      const gangs = getDeviceGangs(device);
+      let name = String(device.name || getDeviceType(device.type).short);
+      if (gangs > 1 && !/×\s*\d/.test(name)) name += ` ×${gangs}`;
       const shortName = name.length > 18 ? `${name.slice(0, 17)}…` : name;
       drawPill(ctx, shortName, screen.x, screen.y + radius + 14, {
         font: "600 9px Manrope, system-ui, sans-serif",
@@ -791,9 +853,12 @@ function drawDraft(ctx, draft, view, floor, deviceType, settings) {
     }
   }
 
-  if (draft.kind === "cable" && draft.points.length > 0) {
+  if ((draft.kind === "cable" || draft.kind === "utp") && draft.points.length > 0) {
     const points = draft.points.map((point) => worldToScreen(point, view));
-    const section = getSectionInfo(settings.defaultSection);
+    const utp = draft.kind === "utp";
+    const color = utp
+      ? getUtpCategory({ category: settings.defaultUtpCategory }).color
+      : getSectionInfo(settings.defaultSection).color;
     ctx.strokeStyle = "rgba(255,255,255,0.95)";
     ctx.lineWidth = 6;
     ctx.beginPath();
@@ -806,9 +871,9 @@ function drawDraft(ctx, draft, view, floor, deviceType, settings) {
       ctx.lineTo(current.x, current.y);
     }
     ctx.stroke();
-    ctx.strokeStyle = section.color;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 3;
-    ctx.setLineDash([8, 5]);
+    ctx.setLineDash(utp ? [9, 5] : [8, 5]);
     ctx.stroke();
     ctx.setLineDash([]);
     for (const point of points) {
@@ -816,7 +881,7 @@ function drawDraft(ctx, draft, view, floor, deviceType, settings) {
       ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
       ctx.fillStyle = "#fff";
       ctx.fill();
-      ctx.strokeStyle = section.color;
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.stroke();
     }
@@ -839,6 +904,7 @@ function drawDraft(ctx, draft, view, floor, deviceType, settings) {
     const screen = worldToScreen(draft.current, view);
     const preview = {
       type: deviceType,
+      gangs: draft.gangs ?? 1,
       x: draft.current.x,
       y: draft.current.y
     };

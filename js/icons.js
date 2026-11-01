@@ -34,14 +34,17 @@ const paths = {
   plug: '<path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0V8ZM12 16.5V21"/>',
   info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 10.5V17M12 7h.01"/>',
   warning: '<path d="M12 3 22 20H2L12 3Z"/><path d="M12 9v5M12 17h.01"/>',
-  location: '<path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 1 0-13 0C5.5 15.4 12 21 12 21Z"/><circle cx="12" cy="10" r="2.2"/>'
+  location: '<path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 1 0-13 0C5.5 15.4 12 21 12 21Z"/><circle cx="12" cy="10" r="2.2"/>',
+  network: '<rect x="3.5" y="8.5" width="17" height="10" rx="1.5"/><path d="M7 12h2m2 0h2m2 0h2M7 15.5h2m2 0h2m2 0h2"/>',
+  elevation: '<rect x="4" y="4" width="16" height="12" rx="1"/><path d="M4 20h16M8 16v4m8-4v4M8 8h8M8 11h4"/>'
 };
 
 const deviceIcons = {
   socket: '<circle cx="12" cy="10" r="6.2"/><path d="M10 7.5v3.2M14 7.5v3.2M8.5 19h7M12 16.2V19"/>',
-  socketDouble: '<circle cx="8" cy="10" r="4.5"/><circle cx="16" cy="10" r="4.5"/><path d="M7 8v2M9 8v2M15 8v2M17 8v2M8.5 18.5h7"/>',
   switch: '<circle cx="9.5" cy="13.5" r="4.2"/><path d="m12 11 6-6M5 20h14"/>',
-  switchDouble: '<circle cx="7.5" cy="14" r="3.3"/><circle cx="16.5" cy="14" r="3.3"/><path d="m9.5 12 4-4M7 20h10"/>',
+  switchPass: '<circle cx="6" cy="13.5" r="3.2"/><circle cx="18" cy="13.5" r="3.2"/><path d="M9.2 13.5h5.6m-2-2 2 2-2 2M4 20h16"/>',
+  switchCross: '<circle cx="12" cy="12" r="5.6"/><path d="m9 9 6 6m0-6-6 6M4 20h16"/>',
+  network: '<rect x="3.5" y="7.5" width="17" height="9" rx="1.5"/><path d="M6.5 7.5v4m3-4v4m5-4v4m3-4v4M12 16.5V21"/>',
   light: '<circle cx="12" cy="12" r="6"/><path d="m8 8 8 8m0-8-8 8"/>',
   lightWall: '<path d="M5 4v7a7 7 0 0 0 14 0V4M5 8h3M16 8h3M2.5 5.5 4 7M21.5 5.5 20 7"/>',
   panel: '<rect x="5.5" y="3.5" width="13" height="17" rx="1.5"/><path d="M8 7h8M8 10.5h8M8 14h8M8 17.5h8"/>',

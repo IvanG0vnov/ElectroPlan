@@ -1,14 +1,21 @@
 // HTML-представления правой панели, списка этажей и менеджера проектов.
 
 import {
+  CABLE_KINDS,
   CABLE_SECTIONS,
   CORES,
   DEVICE_TYPES,
   OPENING_TYPES,
+  UTP_CATEGORIES,
   cableSpecLabel,
+  cableColor,
+  deviceTypeLabel,
+  getCableKind,
+  getDeviceGangs,
   getDeviceType,
   getOpeningType,
   getSectionInfo,
+  getUtpCategory,
   openingSpan,
   sectionLabel
 } from "./model.js";
@@ -141,6 +148,14 @@ function projectSettingsMarkup(project, floor) {
             ${CORES.map((cores) => `<option value="${cores}" ${Number(settings.defaultCores) === cores ? "selected" : ""}>${cores}</option>`).join("")}
           </select>
         </label>
+        <label class="field">
+          <span>UTP по умолчанию</span>
+          <select data-project-setting="defaultUtpCategory">
+            ${UTP_CATEGORIES.map((category) => `
+              <option value="${category.value}" ${settings.defaultUtpCategory === category.value ? "selected" : ""}>${category.label}</option>
+            `).join("")}
+          </select>
+        </label>
       </div>
       <p class="helper-copy">Формула: длина по плану + спуски к устройствам + ${formatNumber(settings.deviceSlack, 2)} м на подключение + запас. Сечение выбираете вы.</p>
     </section>
@@ -214,6 +229,7 @@ function projectMarkup(project, floor) {
 
 function deviceMarkup(project, floor, device) {
   const info = getDeviceType(device.type);
+  const gangs = getDeviceGangs(device);
   const related = floor.cables.filter(
     (cable) => cable.startDeviceId === device.id || cable.endDeviceId === device.id
   );
@@ -225,9 +241,9 @@ function deviceMarkup(project, floor, device) {
           ${deviceIcon(device.type)}
         </div>
         <div class="hero-copy">
-          <span class="eyebrow">Устройство · ${escapeHtml(info.label)}</span>
+          <span class="eyebrow">Устройство · ${escapeHtml(deviceTypeLabel(device))}</span>
           <h2>${escapeHtml(device.name || info.label)}</h2>
-          <p>${related.length} ${pluralRu(related.length, "трасса", "трассы", "трасс")}</p>
+          <p>${gangs > 1 ? `${gangs} ${pluralRu(gangs, "пост", "поста", "постов")} · ` : ""}${related.length} ${pluralRu(related.length, "трасса", "трассы", "трасс")}</p>
         </div>
       </div>
 
@@ -240,6 +256,11 @@ function deviceMarkup(project, floor, device) {
             options: Object.entries(DEVICE_TYPES).map(([value, type]) => ({ value, label: type.label }))
           })}
           ${inputField({ label: "Название", name: "name", value: device.name, wide: true })}
+          ${info.gangs ? selectField({
+            label: "Количество постов", name: "gangs", value: gangs,
+            options: [1, 2, 3, 4].map((value) => ({ value, label: `${value}` })),
+            hint: "Сколько розеток или клавиш в одном корпусе."
+          }) : ""}
           ${inputField({ label: "X, м", name: "x", value: inputNumber(device.x, 2), type: "number", step: "0.01", min: "-100" })}
           ${inputField({ label: "Y, м", name: "y", value: inputNumber(device.y, 2), type: "number", step: "0.01", min: "-100" })}
           ${inputField({ label: "Высота установки, м", name: "mountHeight", value: inputNumber(device.mountHeight, 2), type: "number", step: "0.05", min: "0", max: "10" })}
@@ -260,7 +281,7 @@ function deviceMarkup(project, floor, device) {
           <div class="linked-list">
             ${related.map((cable) => {
               const metrics = cableMetrics(cable, floor, project.settings);
-              const color = getSectionInfo(cable.section).color;
+              const color = cableColor(cable);
               return `
                 <button type="button" class="linked-row" data-action="select-cable" data-cable-id="${escapeHtml(cable.id)}">
                   <span class="color-dot" style="--dot:${color}"></span>
@@ -427,18 +448,20 @@ function roomMarkup(project, floor, room) {
 
 function cableMarkup(project, floor, cable) {
   const metrics = cableMetrics(cable, floor, project.settings);
-  const section = getSectionInfo(cable.section);
+  const utp = getCableKind(cable) === "utp";
+  const color = cableColor(cable);
+  const category = getUtpCategory(cable).value;
   const reserveCustom = cable.reservePercent !== null && cable.reservePercent !== undefined;
   const devices = floor.devices.map((device) => ({
     value: device.id,
-    label: `${device.name} (${getDeviceType(device.type).short})`
+    label: `${device.name} (${deviceTypeLabel(device)})`
   }));
   return `
     <div class="inspector">
       <div class="inspector-hero">
-        <div class="object-icon object-icon-cable" style="--object-color:${section.color}">${icon("cable")}</div>
+        <div class="object-icon object-icon-cable" style="--object-color:${color}">${icon(utp ? "network" : "cable")}</div>
         <div class="hero-copy">
-          <span class="eyebrow">Кабельная трасса · ${escapeHtml(cableSpecLabel(cable))}</span>
+          <span class="eyebrow">${utp ? "UTP-трасса" : "Кабельная трасса"} · ${escapeHtml(cableSpecLabel(cable))}</span>
           <h2>${escapeHtml(cable.name || "Трасса")}</h2>
           <p><strong class="accent-number">${formatNumber(metrics.total)} м</strong> с запасом ${formatNumber(metrics.reservePercent, 0)}%</p>
         </div>
@@ -449,16 +472,24 @@ function cableMarkup(project, floor, cable) {
         <div class="form-grid">
           ${inputField({ label: "Название", name: "name", value: cable.name, wide: true })}
           ${selectField({
+            label: "Вид кабеля", name: "kind", wide: true, value: getCableKind(cable),
+            options: Object.entries(CABLE_KINDS).map(([value, info]) => ({ value, label: info.label }))
+          })}
+          ${utp ? selectField({
+            label: "Категория UTP", name: "category", value: category,
+            options: UTP_CATEGORIES.map((item) => ({ value: item.value, label: item.label }))
+          }) : selectField({
             label: "Сечение", name: "section", value: cable.section,
             options: CABLE_SECTIONS.map((item) => ({ value: item.value, label: item.label }))
           })}
-          ${selectField({
+          ${utp ? "" : selectField({
             label: "Жил", name: "cores", value: cable.cores,
             options: CORES.map((value) => ({ value, label: `${value}` }))
           })}
           ${inputField({ label: "Высота трассы, м", name: "routeHeight", value: inputNumber(cable.routeHeight, 2), type: "number", step: "0.05", min: "0", max: "10" })}
-          ${inputField({ label: "Группа / цепь", name: "circuit", value: cable.circuit, placeholder: "Например, Свет" })}
+          ${inputField({ label: "Группа / цепь", name: "circuit", value: cable.circuit, placeholder: utp ? "Например, Слаботочка" : "Например, Свет" })}
         </div>
+        ${utp ? `<p class="helper-copy">Для витой пары сечение и число жил не задаются: учитывается только марка Cat5e/Cat6/Cat6a и метраж.</p>` : ""}
       </section>
 
       <section class="inspector-section">

@@ -1,7 +1,7 @@
 // Отчёт для печати (PDF через печать браузера) и выгрузка сметы в CSV.
 
 import { summarizeProject } from "./calc.js";
-import { cableSpecLabel, getDeviceType, getSectionInfo } from "./model.js";
+import { cableSpecLabel, cableColor, deviceTypeLabel } from "./model.js";
 import { formatNumber, pluralRu } from "./geometry.js";
 import { escapeHtml, icon } from "./icons.js";
 
@@ -24,7 +24,7 @@ function reportDate() {
 function routeRows(summary) {
   return summary.routes.map((route, index) => {
     const metrics = route.metrics;
-    const color = getSectionInfo(metrics.section).color;
+    const color = cableColor(route.cable);
     return `
       <tr>
         <td class="num">${index + 1}</td>
@@ -74,30 +74,26 @@ function floorSection(entry, index) {
 
 export function buildReportMarkup(project) {
   const data = summarizeProject(project);
-  const sections = data.bySection.map((item) => {
-    const info = getSectionInfo(item.section);
-    return `
+  const sections = data.bySection.map((item) => `
       <tr>
-        <td><span class="report-spec-dot" style="background:${info.color}"></span>${escapeHtml(info.label)}</td>
+        <td><span class="report-spec-dot" style="background:${item.color}"></span>${escapeHtml(item.label)}</td>
         <td class="num">${item.routes}</td>
         <td class="num">${formatNumber(item.plan)}</td>
         <td class="num">${formatNumber(item.vertical + item.slack)}</td>
         <td class="num">${formatNumber(item.reserve)}</td>
         <td class="num strong">${formatNumber(item.total)}</td>
       </tr>
-    `;
-  }).join("");
+    `).join("");
 
-  const specs = data.bySpec.map((item) => {
-    const info = getSectionInfo(item.section);
-    return `
+  const utpItems = data.bySpec.filter((item) => item.kind === "utp");
+  const utpTotal = utpItems.reduce((sum, item) => sum + item.total, 0);
+  const specs = data.bySpec.map((item) => `
       <tr>
-        <td><span class="report-spec-dot" style="background:${info.color}"></span>${item.cores}×${String(item.section).replace(".", ",")} мм²</td>
+        <td><span class="report-spec-dot" style="background:${item.color}"></span>${escapeHtml(item.label)}${item.kind === "utp" ? "" : " мм²"}</td>
         <td class="num">${item.routes}</td>
         <td class="num strong">${formatNumber(item.total)}</td>
       </tr>
-    `;
-  }).join("");
+    `).join("");
 
   return `
     <article class="report-sheet">
@@ -170,7 +166,7 @@ export function buildReportMarkup(project) {
       <section class="report-section">
         <div class="report-section-title">
           <h2>Спецификация по маркам</h2>
-          <span>Жилы × сечение</span>
+          <span>Силовые и UTP</span>
         </div>
         <table class="report-table report-table-compact">
           <thead>
@@ -178,6 +174,7 @@ export function buildReportMarkup(project) {
           </thead>
           <tbody>${specs || `<tr><td colspan="3" class="report-empty">Нет данных</td></tr>`}</tbody>
         </table>
+        ${utpItems.length ? `<p class="report-note">Витая пара: ${formatNumber(utpTotal)} м. Категория и метраж учтены отдельно от силовых сечений.</p>` : ""}
       </section>
 
       ${data.floors.map(floorSection).join("")}
@@ -207,15 +204,17 @@ export function buildCsv(project) {
     return /[";\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
   const rows = [];
-  rows.push(["Этаж", "Трасса", "Сечение, мм²", "Жил", "Марка", "Цепь", "Начало", "Конец", "По плану, м", "Спуски, м", "Подключения, м", "Запас, %", "Итого, м", "Примечание"]);
+  rows.push(["Этаж", "Трасса", "Вид", "Сечение, мм²", "Жил", "Марка", "Цепь", "Начало", "Конец", "По плану, м", "Спуски, м", "Подключения, м", "Запас, %", "Итого, м", "Примечание"]);
   for (const entry of data.floors) {
     for (const route of entry.summary.routes) {
       const metrics = route.metrics;
+      const utp = metrics.kind === "utp";
       rows.push([
         entry.floor.name,
         route.cable.name || "Трасса",
-        String(metrics.section).replace(".", ","),
-        metrics.cores,
+        utp ? "UTP" : "Силовой",
+        utp ? "" : String(metrics.section).replace(".", ","),
+        utp ? "" : metrics.cores,
         cableSpecLabel(route.cable),
         route.cable.circuit || "",
         metrics.startDevice?.name || "",
@@ -235,7 +234,7 @@ export function buildCsv(project) {
   rows.push(["Сечение", "Трасс", "По плану, м", "Итого, м"]);
   for (const item of data.bySection) {
     rows.push([
-      getSectionInfo(item.section).label,
+      item.label,
       item.routes,
       formatNumber(item.plan),
       formatNumber(item.total)
@@ -246,13 +245,13 @@ export function buildCsv(project) {
   rows.push(["Марка", "Трасс", "Итого, м"]);
   for (const item of data.bySpec) {
     rows.push([
-      `${item.cores}×${String(item.section).replace(".", ",")}`,
+      item.label,
       item.routes,
       formatNumber(item.total)
     ]);
   }
   rows.push([]);
-  rows.push(["ВСЕГО", "", "", "", "", "", "", "", formatNumber(data.totals.plan), formatNumber(data.totals.vertical + data.totals.slack), "", "", formatNumber(data.totals.total), ""]);
+  rows.push(["ВСЕГО", "", "", "", "", "", "", "", "", formatNumber(data.totals.plan), formatNumber(data.totals.vertical + data.totals.slack), "", "", formatNumber(data.totals.total), ""]);
 
   return `\uFEFF${rows.map((row) => row.map(quote).join(";")).join("\r\n")}`;
 }
@@ -276,7 +275,7 @@ export function downloadCsv(project) {
 export function deviceSummary(floor) {
   const map = new Map();
   for (const device of floor.devices) {
-    const type = getDeviceType(device.type).label;
+    const type = deviceTypeLabel(device);
     map.set(type, (map.get(type) || 0) + 1);
   }
   return map;
