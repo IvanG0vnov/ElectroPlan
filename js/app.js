@@ -811,6 +811,10 @@ function handleInspectorChange(event) {
         if (!Number.isFinite(number)) return false;
         item[key][axis] = number;
       }
+      for (const opening of floor.openings || []) {
+        if (opening.wallId !== item.id) continue;
+        opening.offset = openingSpan(opening, item).center;
+      }
       return true;
     }
 
@@ -848,7 +852,11 @@ function handleInspectorChange(event) {
         item.note = String(rawValue);
       }
       const wall = floor.walls.find((entry) => entry.id === item.wallId);
-      if (wall) item.offset = openingSpan(item, wall).center;
+      if (wall) {
+        const span = openingSpan(item, wall);
+        item.offset = span.center;
+        item.width = span.width;
+      }
       return true;
     }
 

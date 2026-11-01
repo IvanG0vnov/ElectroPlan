@@ -1365,6 +1365,10 @@ export class PlanEditor {
       if (drag.objectType === "wall") {
         const key = drag.pointIndex === 0 ? "a" : "b";
         item[key] = { x: point.x, y: point.y };
+        for (const opening of floor.openings || []) {
+          if (opening.wallId !== item.id) continue;
+          opening.offset = openingSpan(opening, item).center;
+        }
       } else if (item.points) {
         const index = drag.pointIndex === "last" ? item.points.length - 1 : drag.pointIndex;
         item.points[index] = { x: point.x, y: point.y };
