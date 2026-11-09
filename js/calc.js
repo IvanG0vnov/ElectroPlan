@@ -2,7 +2,7 @@
 // сечение задаёт пользователь, программа только считает метраж.
 
 import { polylineLength } from "./geometry.js";
-import { UTP_CATEGORIES, getCableKind, getSectionInfo, getUtpCategory } from "./model.js";
+import { UTP_CATEGORIES, getCableKind, getSectionInfo, getUtpCategory, sectionLabel } from "./model.js";
 
 function metricsSpecKey(metrics) {
   return metrics.kind === "utp"
@@ -141,7 +141,11 @@ export function summarizeProject(project) {
     }
   }
 
-  for (const item of bySection.values()) item.section = Number(item.key);
+  for (const item of bySection.values()) {
+    item.section = Number(item.key);
+    item.label = sectionLabel(item.section);
+    item.color = getSectionInfo(item.section).color;
+  }
   for (const item of byCircuit.values()) item.circuit = item.key;
 
   return {
@@ -208,6 +212,8 @@ export function summarize(project, floor) {
 
   for (const item of bySection.values()) {
     item.section = Number(item.key);
+    item.label = sectionLabel(item.section);
+    item.color = getSectionInfo(item.section).color;
   }
   for (const item of byCircuit.values()) {
     item.circuit = item.key;

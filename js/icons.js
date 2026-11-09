@@ -36,7 +36,8 @@ const paths = {
   warning: '<path d="M12 3 22 20H2L12 3Z"/><path d="M12 9v5M12 17h.01"/>',
   location: '<path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 1 0-13 0C5.5 15.4 12 21 12 21Z"/><circle cx="12" cy="10" r="2.2"/>',
   network: '<rect x="3.5" y="8.5" width="17" height="10" rx="1.5"/><path d="M7 12h2m2 0h2m2 0h2M7 15.5h2m2 0h2m2 0h2"/>',
-  elevation: '<rect x="4" y="4" width="16" height="12" rx="1"/><path d="M4 20h16M8 16v4m8-4v4M8 8h8M8 11h4"/>'
+  elevation: '<rect x="4" y="4" width="16" height="12" rx="1"/><path d="M4 20h16M8 16v4m8-4v4M8 8h8M8 11h4"/>',
+  panel: '<rect x="4.5" y="3" width="15" height="18" rx="1.5"/><path d="M7.5 7h9M7.5 10.5h9M7.5 14h9M7.5 17.5h9"/>'
 };
 
 const deviceIcons = {

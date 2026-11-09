@@ -27,6 +27,12 @@ const DEVICE_COLORS = {
   junction: "#7c3aed"
 };
 
+// Горизонтальные размеры на развёртке показываем для розеток и выключателей.
+const DEVICE_DIMENSION_TYPES = new Set(["socket", "switch", "switchPass", "switchCross", "network"]);
+const DIMENSION_STEP = 14;
+const DIMENSION_TEXT_HEIGHT = 13;
+const DIMENSION_GLYPH_RADIUS = 11;
+
 function formatMeters(value) {
   return `${formatNumber(value, 2)} м`;
 }
@@ -52,6 +58,115 @@ function assignDevicesToWalls(floor) {
   return result;
 }
 
+function boxesOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function buildDimensionObstacles(devices, { x0, bottom, scale, wallHeight }) {
+  const obstacles = [];
+  for (const { device, position } of devices) {
+    const height = clamp(Number(device.mountHeight) || 0, 0, wallHeight);
+    const x = x0 + position * scale;
+    const y = bottom - height * scale;
+    obstacles.push({
+      x: x - DIMENSION_GLYPH_RADIUS,
+      y: y - DIMENSION_GLYPH_RADIUS,
+      w: DIMENSION_GLYPH_RADIUS * 2,
+      h: DIMENSION_GLYPH_RADIUS * 2
+    });
+    const label = deviceLabel(device);
+    const labelWidth = Math.max(72, label.length * 6.2 + 16);
+    const labelX = clamp(x - labelWidth / 2, 8, SHEET_WIDTH - labelWidth - 8);
+    const labelY = Math.max(18, y - 34);
+    obstacles.push({ x: labelX, y: labelY, w: labelWidth, h: 27 });
+  }
+  return obstacles;
+}
+
+// Размер ставим на стену, на уровень устройства: линия идёт от ближайшего
+// угла до устройства, а подпись выбирает свободное место рядом с линией.
+function prepareDeviceDimension(item, context) {
+  const { wallLength, x0, widthPx, bottom, top, scale, wallHeight, devices, obstacles, placed } = context;
+  const { device, position } = item;
+  const fromLeft = position <= wallLength / 2;
+  const distance = fromLeft ? position : wallLength - position;
+  if (distance < 0.02) return null;
+  const x = x0 + position * scale;
+  const lineStart = fromLeft ? x0 : x;
+  const lineEnd = fromLeft ? x : x0 + widthPx;
+  const height = clamp(Number(device.mountHeight) || 0, 0, wallHeight);
+  const lineY = bottom - height * scale;
+  const text = formatMeters(distance);
+  const width = text.length * 5.2 + 6;
+  const half = width / 2;
+  const spanWidth = lineEnd - lineStart;
+
+  // Делим размер на участки между устройствами и сначала пробуем самую
+  // широкую свободную часть.
+  const others = devices
+    .map((entry) => x0 + entry.position * scale)
+    .filter((px) => px > lineStart + 2 && px < lineEnd - 2)
+    .sort((a, b) => a - b);
+  const bounds = [lineStart, ...others, lineEnd];
+  const intervals = [];
+  for (let index = 0; index < bounds.length - 1; index += 1) {
+    intervals.push({ start: bounds[index], end: bounds[index + 1] });
+  }
+  // Подпись ставим ближе к измеряемому устройству, чтобы она не читалась
+  // как размер соседнего участка.
+  const anchor = fromLeft ? lineEnd : lineStart;
+  intervals.sort((a, b) => {
+    const distanceA = Math.abs((a.start + a.end) / 2 - anchor);
+    const distanceB = Math.abs((b.start + b.end) / 2 - anchor);
+    return distanceA - distanceB;
+  });
+
+  const offsets = [-5, DIMENSION_STEP, -19, DIMENSION_STEP * 2, -33, DIMENSION_STEP * 3, -47, DIMENSION_STEP * 4];
+  const fractions = [0.5, 0.35, 0.65, 0.2, 0.8];
+  let best = null;
+
+  for (const offset of offsets) {
+    for (const interval of intervals) {
+      const intervalWidth = interval.end - interval.start;
+      for (const fraction of fractions) {
+        let textX = interval.start + intervalWidth * fraction;
+        const minX = lineStart + half + 2;
+        const maxX = lineEnd - half - 2;
+        if (spanWidth > width + 4) textX = clamp(textX, minX, maxX);
+        else textX = (lineStart + lineEnd) / 2;
+        const box = {
+          x: textX - half,
+          y: lineY + offset - 10,
+          w: width,
+          h: DIMENSION_TEXT_HEIGHT
+        };
+        if (box.y < top + 10 || box.y + box.h > bottom - 4) continue;
+        let hits = 0;
+        for (const obstacle of obstacles) if (boxesOverlap(box, obstacle)) hits += 1;
+        for (const other of placed) if (boxesOverlap(box, other)) hits += 1;
+        if (hits === 0) {
+          return { lineStart, lineEnd, lineY, text, textX, offset, box, color: DEVICE_COLORS[device.type] || "#475569" };
+        }
+        if (!best || hits < best.hits) {
+          best = { lineStart, lineEnd, lineY, text, textX, offset, box, hits, color: DEVICE_COLORS[device.type] || "#475569" };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function deviceDimensionMarkup(prepared) {
+  if (!prepared) return "";
+  const { lineStart, lineEnd, lineY, text, textX, offset, color } = prepared;
+  return dimensionLine(lineStart, lineY, lineEnd, lineY, text, {
+    offset,
+    textX,
+    className: "device-dimension",
+    color
+  });
+}
+
 function ticks(x1, y1, x2, y2) {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -68,18 +183,19 @@ function ticks(x1, y1, x2, y2) {
 }
 
 function dimensionLine(x1, y1, x2, y2, text, options = {}) {
-  const { offset = 0, rotate = 0 } = options;
-  const cx = (x1 + x2) / 2;
+  const { offset = 0, rotate = 0, className = "", color = "", textX = (x1 + x2) / 2 } = options;
   const cy = (y1 + y2) / 2;
   const label = escapeHtml(text);
   const transform = rotate
-    ? `transform="rotate(${rotate} ${cx.toFixed(2)} ${(cy + offset).toFixed(2)})"`
+    ? `transform="rotate(${rotate} ${textX.toFixed(2)} ${(cy + offset).toFixed(2)})"`
     : "";
+  const classes = className ? `dimension ${className}` : "dimension";
+  const style = color ? ` style="--dimension-color:${color}"` : "";
   return `
-    <g class="dimension">
+    <g class="${classes}"${style}>
       <line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />
       ${ticks(x1, y1, x2, y2)}
-      <text x="${cx.toFixed(2)}" y="${(cy + offset).toFixed(2)}" ${transform}>${label}</text>
+      <text x="${textX.toFixed(2)}" y="${(cy + offset).toFixed(2)}" ${transform}>${label}</text>
     </g>
   `;
 }
@@ -120,7 +236,7 @@ function deviceLabel(device) {
   return gangs > 1 && !/×\s*\d/.test(short) ? `${short} ×${gangs}` : short;
 }
 
-function openingMarkup(opening, wall, x0, bottom, scale, openingIndex) {
+function openingMarkup(opening, wall, x0, bottom, scale) {
   const span = openingSpan(opening, wall);
   const width = Math.max(0, span.width);
   const height = Number(opening.height) || getOpeningType(opening.type).defaultHeight;
@@ -135,7 +251,7 @@ function openingMarkup(opening, wall, x0, bottom, scale, openingIndex) {
   const label = getOpeningType(opening.type).label;
   const showLabel = widthPx > 66;
   const showWidth = widthPx > 34;
-  const dimX = Math.min(x + widthPx + 12 + openingIndex * 0, SHEET_WIDTH - 24);
+  const dimX = Math.min(x + widthPx + 12, SHEET_WIDTH - 24);
   return `
     <g class="elevation-opening">
       <rect x="${x.toFixed(2)}" y="${yTop.toFixed(2)}" width="${widthPx.toFixed(2)}" height="${(yBottom - yTop).toFixed(2)}" fill="${fill}" stroke="${color}" stroke-width="2" rx="1" />
@@ -203,17 +319,43 @@ function wallSheet(project, floor, wall, index, deviceMap) {
   const x0 = AREA.x + (AREA.width - widthPx) / 2;
   const bottom = AREA.y + AREA.height;
   const top = bottom - heightPx;
-  const openings = (floor.openings || [])
-    .filter((opening) => opening.wallId === wall.id)
-    .map((opening) => openingSpan(opening, wall))
-    .filter((span) => span.end > 0.01 && span.start < length - 0.01);
-  const filteredOpenings = (floor.openings || [])
-    .filter((opening) => opening.wallId === wall.id)
-    .filter((opening) => {
-      const span = openingSpan(opening, wall);
-      return span.end > 0.01 && span.start < length - 0.01;
-    });
+  const wallOpenings = (floor.openings || []).filter((opening) => {
+    if (opening.wallId !== wall.id) return false;
+    const span = openingSpan(opening, wall);
+    return span.end > 0.01 && span.start < length - 0.01;
+  });
   const devices = (deviceMap.get(wall.id) || []).sort((a, b) => a.position - b.position);
+  const obstacles = buildDimensionObstacles(devices, { x0, bottom, scale, wallHeight });
+  const placedTexts = [];
+  const dimensionKeys = new Set();
+  const dimensionMarkup = devices
+    .filter((item) => {
+      if (!DEVICE_DIMENSION_TYPES.has(item.device.type)) return false;
+      if (item.position < 0.02 || length - item.position < 0.02) return false;
+      const height = clamp(Number(item.device.mountHeight) || 0, 0, wallHeight);
+      const key = `${Math.round(item.position * 100)}:${Math.round(height * 100)}`;
+      if (dimensionKeys.has(key)) return false;
+      dimensionKeys.add(key);
+      return true;
+    })
+    .map((item) => {
+      const prepared = prepareDeviceDimension(item, {
+        wallLength: length,
+        x0,
+        widthPx,
+        bottom,
+        top,
+        scale,
+        wallHeight,
+        devices,
+        obstacles,
+        placed: placedTexts
+      });
+      if (!prepared) return "";
+      placedTexts.push(prepared.box);
+      return deviceDimensionMarkup(prepared);
+    })
+    .join("");
   const id = String(wall.id || index).replace(/[^\w-]/g, "");
 
   return `
@@ -241,13 +383,14 @@ function wallSheet(project, floor, wall, index, deviceMap) {
         ${dimensionLine(x0, bottom + 58, x0 + widthPx, bottom + 58, `длина стены ${formatMeters(length)}`, { offset: 16 })}
         ${dimensionLine(x0 - 54, bottom, x0 - 54, top, `высота ${formatMeters(wallHeight)}`, { offset: -10, rotate: -90 })}
 
-        ${filteredOpenings.map((opening, openingIndex) => openingMarkup(opening, wall, x0, bottom, scale, openingIndex)).join("")}
+        ${wallOpenings.map((opening) => openingMarkup(opening, wall, x0, bottom, scale)).join("")}
+        ${dimensionMarkup}
         ${devices.map((item) => deviceMarkup(item, x0, bottom, scale, wallHeight)).join("")}
 
-        <text class="sheet-note" x="${SHEET_WIDTH - 26}" y="${SHEET_HEIGHT - 22}">Размеры от пола и углов стены · ${formatMeters(length)} × ${formatMeters(wallHeight)}</text>
+        <text class="sheet-note" x="${SHEET_WIDTH - 26}" y="${SHEET_HEIGHT - 22}">Размеры на стене: от пола и ближайшего угла · ${formatMeters(length)} × ${formatMeters(wallHeight)}</text>
       </svg>
       <footer class="elevation-sheet-foot">
-        <span>Проёмы: ${openings.length} · устройства у стены: ${devices.length}</span>
+        <span>Проёмы: ${wallOpenings.length} · устройства у стены: ${devices.length}</span>
         <span>${escapeHtml(project.name)}</span>
       </footer>
     </article>

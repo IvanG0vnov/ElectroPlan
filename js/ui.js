@@ -14,10 +14,8 @@ import {
   getDeviceGangs,
   getDeviceType,
   getOpeningType,
-  getSectionInfo,
   getUtpCategory,
-  openingSpan,
-  sectionLabel
+  openingSpan
 } from "./model.js";
 import { cableMetrics, summarizeProject } from "./calc.js";
 import { formatNumber, polygonArea, polylineLength, pluralRu } from "./geometry.js";

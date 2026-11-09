@@ -60,6 +60,9 @@
         <button class="icon-btn" type="button" id="elevationsBtn" title="Развёртки стен" aria-label="Развёртки стен">
           <span data-icon="elevation"></span>
         </button>
+        <button class="icon-btn" type="button" id="panelBtn" title="Сборка щита" aria-label="Сборка щита">
+          <span data-icon="panel"></span>
+        </button>
         <button class="icon-btn" type="button" id="helpBtn" title="Как пользоваться" aria-label="Как пользоваться">
           <span data-icon="help"></span>
         </button>
@@ -87,6 +90,15 @@
           <section class="side-section">
             <div class="side-section-title">Устройства</div>
             <div class="device-grid" id="devicePalette"></div>
+            <label class="side-gangs" id="deviceGangsField" hidden>
+              <span>Количество постов</span>
+              <select id="deviceGangsSelect" aria-label="Количество постов нового устройства">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
             <p class="side-hint">Выберите устройство и нажмите на план. Высота установки подставится автоматически.</p>
           </section>
 
@@ -180,6 +192,7 @@
           <button class="dock-btn" type="button" data-tool="door"><span data-icon="door"></span><small>Дверь</small></button>
           <button class="dock-btn" type="button" data-tool="window"><span data-icon="window"></span><small>Окно</small></button>
           <button class="dock-btn" type="button" data-tool="cable"><span data-icon="cable"></span><small>Кабель</small></button>
+          <button class="dock-btn" type="button" data-tool="utp"><span data-icon="cable"></span><small>UTP</small></button>
           <button class="dock-btn" type="button" id="mobileDevicesBtn"><span data-icon="plug"></span><small>Устройства</small></button>
           <button class="dock-btn" type="button" id="mobileInspectorBtn"><span data-icon="settings"></span><small>Свойства</small></button>
           <button class="dock-btn" type="button" id="mobileSummaryBtn"><span data-icon="report"></span><small>Смета</small></button>
@@ -274,7 +287,7 @@
           </article>
           <article class="help-step">
             <span class="help-step-number">05</span>
-            <div><h3>Получите смету и развёртки</h3><p>Во вкладке «Смета» проверьте итоги по сечениям и маркам UTP, нажмите «Отчёт PDF» или «CSV». Кнопка «Развёртки» строит виды каждой стены с размерами от пола и печатью.</p></div>
+            <div><h3>Соберите щит и документы</h3><p>Во вкладке «Смета» проверьте итоги по сечениям и маркам UTP. Кнопка «Щит» открывает сборку: корпус, ряды DIN, модули, цепи и спецификация. «Развёртки» строят виды стен, «Отчёт PDF» и «CSV» выгружают смету.</p></div>
           </article>
         </div>
         <div class="help-grid">
@@ -297,10 +310,10 @@
             <button class="btn btn-primary btn-block" type="button" id="installAppBtn" hidden><span data-icon="download"></span> Установить приложение</button>
           </section>
         </div>
-        <div class="help-note"><span data-icon="info"></span> Приложение не подбирает сечение кабеля и автоматические выключатели. Сечения вы задаёте сами — программа считает только метраж и формирует смету.</div>
+        <div class="help-note"><span data-icon="info"></span> Приложение не подбирает сечение кабеля, автоматические выключатели и номиналы. Сечения и аппараты вы задаёте сами — программа считает метраж, раскладывает модули по DIN-рейкам и формирует спецификацию.</div>
       </div>
       <footer class="modal-foot">
-        <span>Версия 1.1.0 · офлайн-PWA</span>
+        <span>Версия 1.2.0 · офлайн-PWA</span>
         <button class="btn btn-primary btn-sm" type="button" data-close-dialog>Понятно</button>
       </footer>
     </div>
@@ -346,6 +359,23 @@
     </header>
     <div class="elevations-scroll">
       <div class="elevations-preview" id="elevationsPreview"></div>
+    </div>
+  </section>
+
+  <section class="panel-overlay" id="panelOverlay" hidden aria-label="Сборка щита">
+    <header class="panel-toolbar">
+      <button class="btn btn-ghost" type="button" id="panelCloseBtn"><span data-icon="select"></span> Назад к плану</button>
+      <div class="panel-toolbar-title">
+        <span class="eyebrow">Документ</span>
+        <strong>Сборка щита</strong>
+      </div>
+      <div class="panel-toolbar-actions">
+        <span class="panel-count" id="panelCount"></span>
+        <button class="btn btn-primary" type="button" id="panelPrintBtn"><span data-icon="printer"></span> Печать / PDF</button>
+      </div>
+    </header>
+    <div class="panel-scroll">
+      <div class="panel-preview" id="panelPreview"></div>
     </div>
   </section>
 

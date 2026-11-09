@@ -25,6 +25,99 @@ export const UTP_CATEGORIES = [
   { value: "Cat6a", label: "UTP Cat6a", color: "#7c3aed" }
 ];
 
+// Корпуса щитов: ширина ряда и количество DIN-рейок.
+export const PANEL_LAYOUTS = [
+  { value: "12x1", columns: 12, rows: 1, label: "12 модулей · 1×12" },
+  { value: "18x1", columns: 18, rows: 1, label: "18 модулей · 1×18" },
+  { value: "12x2", columns: 12, rows: 2, label: "24 модуля · 2×12" },
+  { value: "12x3", columns: 12, rows: 3, label: "36 модулей · 3×12" },
+  { value: "18x3", columns: 18, rows: 3, label: "54 модуля · 3×18" }
+];
+
+// Каталог модулей щита. Ширина указана в модулях DIN (17,5 мм).
+// Номиналы и характеристики не подбираются автоматически — их задаёт пользователь.
+export const PANEL_MODULE_TYPES = {
+  main2: {
+    label: "Вводной автомат 2P", short: "Ввод 2P", width: 2,
+    group: "breaker", rating: true, curve: true
+  },
+  main3: {
+    label: "Вводной автомат 3P", short: "Ввод 3P", width: 3,
+    group: "breaker", rating: true, curve: true
+  },
+  breaker1: {
+    label: "Автомат 1P", short: "1P", width: 1,
+    group: "breaker", rating: true, curve: true
+  },
+  breaker2: {
+    label: "Автомат 2P", short: "2P", width: 2,
+    group: "breaker", rating: true, curve: true
+  },
+  breaker3: {
+    label: "Автомат 3P", short: "3P", width: 3,
+    group: "breaker", rating: true, curve: true
+  },
+  breaker4: {
+    label: "Автомат 4P", short: "4P", width: 4,
+    group: "breaker", rating: true, curve: true
+  },
+  rcd2: {
+    label: "УЗО 2P", short: "УЗО 2P", width: 2,
+    group: "rcd", rating: true, leakage: true
+  },
+  rcd4: {
+    label: "УЗО 4P", short: "УЗО 4P", width: 4,
+    group: "rcd", rating: true, leakage: true
+  },
+  diff2: {
+    label: "Дифавтомат 1P+N", short: "Диф 2P", width: 2,
+    group: "diff", rating: true, curve: true, leakage: true
+  },
+  diff4: {
+    label: "Дифавтомат 3P+N", short: "Диф 4P", width: 4,
+    group: "diff", rating: true, curve: true, leakage: true
+  },
+  relay: {
+    label: "Реле напряжения", short: "Реле", width: 2,
+    group: "relay"
+  },
+  contactor: {
+    label: "Контактор", short: "Контактор", width: 2,
+    group: "relay", rating: true
+  },
+  meter: {
+    label: "Счётчик", short: "Счётчик", width: 4,
+    group: "meter"
+  },
+  spd: {
+    label: "УЗИП", short: "УЗИП", width: 2,
+    group: "other"
+  },
+  terminal: {
+    label: "Клеммник", short: "Клемма", width: 1,
+    group: "terminal"
+  },
+  blank: {
+    label: "Заглушка", short: "Заглушка", width: 1,
+    group: "blank"
+  },
+  other: {
+    label: "Модуль", short: "Модуль", width: 1,
+    group: "other"
+  }
+};
+
+export const PANEL_GROUP_LABELS = {
+  breaker: "Автоматы",
+  rcd: "УЗО",
+  diff: "Дифавтоматы",
+  relay: "Реле и контакторы",
+  meter: "Учёт",
+  terminal: "Клеммы",
+  blank: "Заглушки",
+  other: "Прочее"
+};
+
 export const DEVICE_TYPES = {
   socket: {
     label: "Розетка", short: "Розетка", mountHeight: 0.3,
@@ -98,6 +191,92 @@ export function nowIso() {
   return new Date().toISOString();
 }
 
+// --- Щит ----------------------------------------------------------------
+
+function panelRating(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "";
+  return Math.min(125, Math.max(1, Math.round(number)));
+}
+
+function panelLeakage(value) {
+  const number = Number(value);
+  return [10, 30, 100, 300].includes(number) ? number : "";
+}
+
+export function getPanelModuleType(type) {
+  return PANEL_MODULE_TYPES[type] || PANEL_MODULE_TYPES.other;
+}
+
+export function panelModuleWidth(module) {
+  return getPanelModuleType(module?.type).width;
+}
+
+export function panelModuleSpec(module) {
+  const info = getPanelModuleType(module?.type);
+  const parts = [];
+  if (info.rating && module?.rating) {
+    parts.push(info.curve ? `${module.curve || "C"}${module.rating}` : `${module.rating} А`);
+  }
+  if (info.leakage && module?.leakage) parts.push(`${module.leakage} мА`);
+  return parts.length ? `${info.label} · ${parts.join(" · ")}` : info.label;
+}
+
+export function createPanelModule(type, extra = {}) {
+  const key = PANEL_MODULE_TYPES[type] ? type : "other";
+  const info = PANEL_MODULE_TYPES[key];
+  const curve = String(extra.curve || "C").toUpperCase();
+  return {
+    id: extra.id || createId("mod"),
+    type: key,
+    rating: info.rating ? panelRating(extra.rating) : "",
+    curve: info.curve ? (["B", "C", "D"].includes(curve) ? curve : "C") : "",
+    leakage: info.leakage ? panelLeakage(extra.leakage) : "",
+    circuit: String(extra.circuit || ""),
+    note: String(extra.note || "")
+  };
+}
+
+export function normalizePanelModule(input) {
+  return createPanelModule(input.type, input);
+}
+
+export function createPanel(name = "Щит") {
+  return {
+    id: createId("panel"),
+    name,
+    columns: 12,
+    rows: 2,
+    modules: []
+  };
+}
+
+export function panelLayoutKey(panel) {
+  const columns = Number(panel?.columns) || 12;
+  const rows = Number(panel?.rows) || 2;
+  const found = PANEL_LAYOUTS.find((item) => item.columns === columns && item.rows === rows);
+  return found ? found.value : "12x2";
+}
+
+export function normalizePanel(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const columns = [12, 18].includes(Number(source.columns)) ? Number(source.columns) : 12;
+  const rowsNumber = Math.round(Number(source.rows));
+  const rows = Number.isFinite(rowsNumber) ? Math.min(6, Math.max(1, rowsNumber)) : 2;
+  return {
+    id: String(source.id || createId("panel")),
+    name: String(source.name || "Щит").slice(0, 60),
+    columns,
+    rows,
+    modules: Array.isArray(source.modules)
+      ? source.modules
+        .filter((item) => item && typeof item === "object")
+        .map(normalizePanelModule)
+      : []
+  };
+}
+
 export function createFloor(name = "1 этаж") {
   return {
     id: createId("floor"),
@@ -122,7 +301,8 @@ export function createProject(name = "Мой дом") {
     updatedAt: nowIso(),
     settings: { ...DEFAULT_SETTINGS },
     floors: [floor],
-    activeFloorId: floor.id
+    activeFloorId: floor.id,
+    panel: createPanel()
   };
 }
 
@@ -261,6 +441,17 @@ export function createDemoProject() {
     ], sw2.id, l2.id, "Свет")
   ];
 
+  project.panel = {
+    ...createPanel("Щит"),
+    modules: [
+      createPanelModule("main2", { rating: 40, curve: "C", circuit: "Ввод" }),
+      createPanelModule("rcd2", { rating: 40, leakage: 30, circuit: "Розетки" }),
+      createPanelModule("breaker1", { rating: 16, curve: "C", circuit: "Розетки" }),
+      createPanelModule("breaker1", { rating: 10, curve: "C", circuit: "Свет" }),
+      createPanelModule("terminal", { circuit: "Слаботочка" })
+    ]
+  };
+
   return project;
 }
 
@@ -283,7 +474,10 @@ export function cloneProject(project) {
         points: cable.points.map((point) => ({ ...point }))
       })),
       underlay: floor.underlay ? { ...floor.underlay, image: floor.underlay.image } : null
-    }))
+    })),
+    panel: project.panel
+      ? { ...project.panel, modules: (project.panel.modules || []).map((module) => ({ ...module })) }
+      : createPanel()
   };
 }
 
@@ -481,6 +675,7 @@ export function normalizeProject(input) {
     version: APP_VERSION,
     settings: { ...DEFAULT_SETTINGS, ...(input.settings || {}) }
   };
+  project.panel = normalizePanel(project.panel);
 
   if (!Array.isArray(project.floors) || project.floors.length === 0) {
     project.floors = [createFloor()];

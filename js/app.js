@@ -3,12 +3,16 @@
 import {
   DEVICE_TYPES,
   OPENING_TYPES,
+  PANEL_LAYOUTS,
+  PANEL_MODULE_TYPES,
   UTP_CATEGORIES,
   createDemoProject,
   createId,
+  createPanelModule,
   createProject,
   getDeviceType,
   getOpeningType,
+  getPanelModuleType,
   normalizeProject,
   nowIso,
   openingSpan
@@ -23,6 +27,7 @@ import {
   selectedItem,
   setTool,
   setDeviceType,
+  setDeviceGangs,
   commit,
   undo,
   redo,
@@ -44,6 +49,7 @@ import {
   sanitizeFilename
 } from "./report.js";
 import { renderElevations } from "./elevations.js";
+import { panelStats, renderPanel } from "./panel.js";
 import { deviceIcon, escapeHtml, icon } from "./icons.js";
 
 const TOOLS = [
@@ -95,7 +101,7 @@ let hintKey = "";
 function cacheElements() {
   const ids = [
     "leftPanelBtn", "leftPanel", "leftCloseBtn", "panelBackdrop",
-    "toolPalette", "devicePalette", "floorList", "storageBadge", "storageBadgeDialog",
+    "toolPalette", "devicePalette", "deviceGangsField", "deviceGangsSelect", "floorList", "storageBadge", "storageBadgeDialog",
     "topProjectName", "projectOpenBtn", "saveState", "saveStateText", "saveDot",
     "undoBtn", "redoBtn", "settingsBtn", "reportBtn", "helpBtn", "helpBtnSide",
     "floorChip", "activeFloorName", "zoomOutBtn", "zoomResetBtn", "zoomInBtn",
@@ -112,6 +118,7 @@ function cacheElements() {
     "reportOverlay", "reportCloseBtn", "reportCsvBtn", "reportPrintBtn", "reportPreview",
     "elevationsBtn", "elevationsOverlay", "elevationsCloseBtn", "elevationsPrintBtn",
     "elevationsPreview", "elevationsCount",
+    "panelBtn", "panelOverlay", "panelCloseBtn", "panelPrintBtn", "panelPreview", "panelCount",
     "projectImportInput", "underlayImportInput", "toastRegion"
   ];
   for (const id of ids) els[id] = $(id);
@@ -188,6 +195,13 @@ function syncToolUi() {
   document.querySelectorAll(".dock-btn[data-tool]").forEach((button) => {
     button.classList.toggle("active", button.dataset.tool === tool);
   });
+
+  const deviceInfo = DEVICE_TYPES[state.deviceType] || DEVICE_TYPES.socket;
+  const showGangs = tool === "device" && !!deviceInfo.gangs;
+  if (els.deviceGangsField) els.deviceGangsField.hidden = !showGangs;
+  if (els.deviceGangsSelect && showGangs) {
+    els.deviceGangsSelect.value = String(state.deviceGangs || deviceInfo.defaultGangs || 1);
+  }
 }
 
 function activateTool(tool) {
@@ -598,6 +612,21 @@ async function handleAction(action, target) {
     case "open-elevations":
       openElevations();
       break;
+    case "open-panel":
+      openPanel();
+      break;
+    case "panel-add-module":
+      addPanelModuleFromForm(target);
+      break;
+    case "panel-module-up":
+      movePanelModule(target.dataset.panelModuleId, -1);
+      break;
+    case "panel-module-down":
+      movePanelModule(target.dataset.panelModuleId, 1);
+      break;
+    case "panel-module-delete":
+      deletePanelModule(target.dataset.panelModuleId);
+      break;
     case "export-json":
       exportProjectFile();
       break;
@@ -711,6 +740,7 @@ function openHelp() {
 function openReport() {
   if (!state.project) return;
   if (!els.elevationsOverlay.hidden) closeElevations();
+  if (!els.panelOverlay.hidden) closePanel();
   renderReport(els.reportPreview, state.project);
   els.reportOverlay.hidden = false;
   document.body.classList.add("report-open");
@@ -727,6 +757,7 @@ function openElevations() {
   const floor = activeFloor();
   if (!state.project || !floor) return;
   if (!els.reportOverlay.hidden) closeReport();
+  if (!els.panelOverlay.hidden) closePanel();
   renderElevations(els.elevationsPreview, { project: state.project, floor });
   const wallCount = floor.walls.length;
   els.elevationsCount.textContent = `${wallCount} ${pluralRu(wallCount, "стена", "стены", "стен")} · ${floor.name}`;
@@ -739,6 +770,152 @@ function closeElevations() {
   els.elevationsOverlay.hidden = true;
   document.body.classList.remove("elevations-open");
   els.elevationsBtn.focus();
+}
+
+function updatePanelCount() {
+  if (!state.project || !els.panelCount) return;
+  const stats = panelStats(state.project);
+  els.panelCount.textContent = `${stats.used} / ${stats.capacity} модулей`;
+}
+
+function openPanel() {
+  if (!state.project) return;
+  if (!els.reportOverlay.hidden) closeReport();
+  if (!els.elevationsOverlay.hidden) closeElevations();
+  renderPanel(els.panelPreview, state.project);
+  updatePanelCount();
+  els.panelOverlay.hidden = false;
+  document.body.classList.add("panel-open");
+  els.panelCloseBtn.focus();
+}
+
+function closePanel() {
+  els.panelOverlay.hidden = true;
+  document.body.classList.remove("panel-open");
+  els.panelBtn.focus();
+}
+
+// --- Сборка щита ----------------------------------------------------------
+
+function panelModuleIndex(panel, moduleId) {
+  return (panel.modules || []).findIndex((module) => module.id === moduleId);
+}
+
+function handlePanelChange(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+
+  if (target.dataset.panelField === "name") {
+    const name = target.value.trim() || "Щит";
+    commit((project) => {
+      project.panel.name = name.slice(0, 60);
+    });
+    return;
+  }
+
+  if (target.dataset.panelField === "layout") {
+    const layout = PANEL_LAYOUTS.find((item) => item.value === target.value);
+    if (!layout) return;
+    commit((project) => {
+      project.panel.columns = layout.columns;
+      project.panel.rows = layout.rows;
+    });
+    return;
+  }
+
+  if (target.dataset.panelCircuitAdd) {
+    const type = target.value;
+    if (!type) return;
+    const circuit = target.dataset.panelCircuitAdd;
+    commit((project) => {
+      project.panel.modules.push(createPanelModule(type, { circuit }));
+    });
+    return;
+  }
+
+  const moduleId = target.dataset.panelModuleId;
+  const field = target.dataset.panelModuleField;
+  if (!moduleId || !field) return;
+
+  commit((project) => {
+    const panel = project.panel;
+    const module = panel.modules.find((item) => item.id === moduleId);
+    if (!module) return false;
+
+    if (field === "type") {
+      if (!PANEL_MODULE_TYPES[target.value]) return false;
+      const info = getPanelModuleType(target.value);
+      module.type = target.value;
+      if (!info.rating) module.rating = "";
+      if (!info.curve) module.curve = "";
+      else if (!module.curve) module.curve = "C";
+      if (!info.leakage) module.leakage = "";
+      return true;
+    }
+
+    if (field === "rating") {
+      if (target.value.trim() === "") module.rating = "";
+      else {
+        const number = parseNumber(target.value, 0);
+        if (!Number.isFinite(number)) return false;
+        module.rating = clamp(Math.round(number), 1, 125);
+      }
+      return true;
+    }
+
+    if (field === "curve") {
+      module.curve = ["B", "C", "D"].includes(target.value) ? target.value : "C";
+      return true;
+    }
+
+    if (field === "leakage") {
+      const number = Number(target.value);
+      module.leakage = [10, 30, 100, 300].includes(number) ? number : "";
+      return true;
+    }
+
+    if (field === "circuit") {
+      module.circuit = String(target.value || "").trim();
+      return true;
+    }
+    return false;
+  });
+}
+
+function addPanelModuleFromForm(target) {
+  const form = target.closest(".panel-add");
+  if (!form) return;
+  const type = form.querySelector("[data-panel-add-type]")?.value || "breaker1";
+  const circuit = form.querySelector("[data-panel-add-circuit]")?.value || "";
+  const rating = form.querySelector("[data-panel-add-rating]")?.value || "";
+  commit((project) => {
+    project.panel.modules.push(createPanelModule(type, { circuit, rating }));
+  });
+  showToast("Модуль добавлен в щит");
+}
+
+function movePanelModule(moduleId, direction) {
+  commit((project) => {
+    const modules = project.panel.modules;
+    const index = panelModuleIndex(project.panel, moduleId);
+    const next = index + direction;
+    if (index < 0 || next < 0 || next >= modules.length) return false;
+    [modules[index], modules[next]] = [modules[next], modules[index]];
+    return true;
+  });
+}
+
+function deletePanelModule(moduleId) {
+  commit((project) => {
+    const panel = project.panel;
+    const index = panelModuleIndex(panel, moduleId);
+    if (index < 0) return false;
+    panel.modules.splice(index, 1);
+    return true;
+  });
+  showToast("Модуль удалён из щита");
 }
 
 // --- Обработчики изменения свойств ---------------------------------------
@@ -963,6 +1140,10 @@ function bindEvents() {
     if (button) activateDevice(button.dataset.device);
   });
 
+  els.deviceGangsSelect?.addEventListener("change", () => {
+    setDeviceGangs(Number(els.deviceGangsSelect.value));
+  });
+
   document.querySelectorAll(".dock-btn[data-tool]").forEach((button) => {
     button.addEventListener("click", () => activateTool(button.dataset.tool));
   });
@@ -979,6 +1160,7 @@ function bindEvents() {
 
   els.propertiesPanel.addEventListener("change", handleInspectorChange);
   els.summaryPanel.addEventListener("change", handleInspectorChange);
+  els.panelPreview.addEventListener("change", handlePanelChange);
 
   document.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action]");
@@ -1060,6 +1242,7 @@ function bindEvents() {
   });
   els.reportBtn.addEventListener("click", openReport);
   els.elevationsBtn.addEventListener("click", openElevations);
+  els.panelBtn.addEventListener("click", openPanel);
   [els.helpBtn, els.helpBtnSide].forEach((button) => button.addEventListener("click", openHelp));
 
   els.newProjectForm.addEventListener("submit", async (event) => {
@@ -1098,6 +1281,8 @@ function bindEvents() {
   els.reportPrintBtn.addEventListener("click", () => window.print());
   els.elevationsCloseBtn.addEventListener("click", closeElevations);
   els.elevationsPrintBtn.addEventListener("click", () => window.print());
+  els.panelCloseBtn.addEventListener("click", closePanel);
+  els.panelPrintBtn.addEventListener("click", () => window.print());
   els.reportCsvBtn.addEventListener("click", () => {
     downloadCsv(state.project);
     showToast("Смета выгружена в CSV");
@@ -1126,6 +1311,12 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       closeElevations();
+      return;
+    }
+    if (!els.panelOverlay.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closePanel();
       return;
     }
     if (isMobile() && (els.leftPanel.classList.contains("open") || els.rightPanel.classList.contains("open"))) {
@@ -1165,6 +1356,10 @@ function bindStoreEvents() {
         const wallCount = floor.walls.length;
         els.elevationsCount.textContent = `${wallCount} ${pluralRu(wallCount, "стена", "стены", "стен")} · ${floor.name}`;
       }
+    }
+    if (!els.panelOverlay.hidden) {
+      renderPanel(els.panelPreview, state.project);
+      updatePanelCount();
     }
   });
 

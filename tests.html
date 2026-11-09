@@ -20,7 +20,8 @@
       createDemoProject, cloneProject, normalizeProject, sectionLabel,
       getSectionInfo, cableSpecLabel, getOpeningType, wallLength,
       openingSpan, normalizeOpening, getDeviceGangs, deviceTypeLabel,
-      getCableKind, getUtpCategory
+      getCableKind, getUtpCategory, createPanelModule, panelModuleWidth,
+      panelModuleSpec, normalizePanel
     } from "./js/model.js";
     import {
       dist, polylineLength, polygonArea, polygonCentroid, pointInPolygon,
@@ -28,6 +29,7 @@
     } from "./js/geometry.js";
     import { cableMetrics, summarize, summarizeProject } from "./js/calc.js";
     import { buildElevationsMarkup } from "./js/elevations.js";
+    import { buildPanelBom, buildPanelMarkup, panelStats } from "./js/panel.js";
 
     const results = [];
     function check(name, fn) {
@@ -163,6 +165,8 @@
       assert(s.bySection.length === 2, "должно быть 2 силовых сечения");
       assert(s.bySection.some((item) => item.section === 1.5));
       assert(s.bySection.some((item) => item.section === 2.5));
+      assert(s.bySection.every((item) => item.label && item.color), "у сечений должны быть подпись и цвет");
+      assert(s.bySection.find((item) => item.section === 1.5).label === "1,5 мм²");
       assert(s.bySpec.some((item) => item.kind === "utp"), "должна быть UTP-трасса");
       assert(s.totals.total > 0, "итог должен быть больше нуля");
       return `${s.routes.length} трасс, ${formatNumber(s.totals.total)} м`;
@@ -232,9 +236,97 @@
       const floor = project.floors[0];
       const markup = buildElevationsMarkup(project, floor);
       const sheets = (markup.match(/class="elevation-sheet"/g) || []).length;
+      const dimensions = (markup.match(/class="dimension device-dimension"/g) || []).length;
       assert(sheets === floor.walls.length, "число листов должно совпадать с числом стен");
       assert(markup.includes("Развёртка стены"));
-      return `${sheets} листов`;
+      assert(dimensions >= 5, "должны быть размеры от стены до розеток и выключателей");
+      assert(markup.includes("Размеры на стене"), "подпись листа должна пояснять размеры на стене");
+      return `${sheets} листов, ${dimensions} размеров`;
+    });
+
+    check("Щит: корпус по умолчанию и миграция", () => {
+      const project = normalizeProject({ name: "Без щита" });
+      assert(project.panel, "панель щита должна создаваться автоматически");
+      assert(project.panel.columns === 12 && project.panel.rows === 2);
+      assert(project.panel.modules.length === 0);
+      const legacy = normalizeProject({ name: "Старый", panel: { columns: 18, rows: 3 } });
+      assert(legacy.panel.columns === 18 && legacy.panel.rows === 3);
+      return "новый корпус 24 модуля, старые данные сохранены";
+    });
+
+    check("Щит: раскладка и заполнение", () => {
+      const project = createDemoProject();
+      project.panel.columns = 12;
+      project.panel.rows = 2;
+      project.panel.modules = [
+        createPanelModule("breaker1"),
+        createPanelModule("breaker2"),
+        createPanelModule("rcd2"),
+        createPanelModule("meter")
+      ];
+      const stats = panelStats(project);
+      assert(stats.used === 9, `занято ${stats.used}, ожидалось 9`);
+      assert(stats.free === 15, `свободно ${stats.free}, ожидалось 15`);
+      assert(stats.overflow === 0);
+      assert(stats.displayRows.length === 2);
+      assert(stats.displayRows[0].length === 4, "в первом ряду должно быть 4 модуля");
+      return "9 из 24 модулей, 4 аппарата в ряду";
+    });
+
+    check("Щит: перенос модуля и переполнение", () => {
+      const project = createDemoProject();
+      project.panel.columns = 12;
+      project.panel.rows = 1;
+      project.panel.modules = Array.from({ length: 13 }, () => createPanelModule("breaker1"));
+      const stats = panelStats(project);
+      assert(stats.used === 13);
+      assert(stats.capacity === 12);
+      assert(stats.overflow === 1);
+      assert(stats.displayRows.length === 2, "лишний модуль должен уйти на второй ряд");
+      assert(stats.displayRows[0].length === 12);
+      assert(stats.displayRows[1].length === 1);
+      return "13-й модуль вынесен за корпус";
+    });
+
+    check("Щит: спецификация и группировка", () => {
+      const project = createDemoProject();
+      project.panel.modules = [
+        createPanelModule("breaker1", { rating: 16, circuit: "Розетки" }),
+        createPanelModule("breaker1", { rating: 16, circuit: "Кухня" }),
+        createPanelModule("rcd2", { rating: 40, leakage: 30, circuit: "Розетки" })
+      ];
+      const bom = buildPanelBom(project.panel);
+      assert(bom.length === 2, "одинаковые автоматы должны группироваться");
+      const breaker = bom.find((item) => item.label.includes("Автомат"));
+      assert(breaker.count === 2 && breaker.width === 2);
+      assert(breaker.circuits.length === 2, "цепи должны объединяться");
+      const rcd = bom.find((item) => item.label.includes("УЗО"));
+      assert(rcd.count === 1 && rcd.width === 2);
+      return "2 позиции, автоматы ×2";
+    });
+
+    check("Щит: демо и разметка", () => {
+      const project = createDemoProject();
+      const stats = panelStats(project);
+      assert(stats.moduleCount === 5, "в демо должно быть 5 аппаратов");
+      assert(stats.used === 7, `занято ${stats.used}, ожидалось 7`);
+      assert(stats.free === 17);
+      assert(stats.overflow === 0);
+      const markup = buildPanelMarkup(project);
+      assert(markup.includes("Спецификация щита"));
+      assert(markup.includes("Цепи проекта"));
+      assert(markup.includes("panel-module"));
+      return `${stats.moduleCount} аппаратов, ${stats.used} из ${stats.capacity} модулей`;
+    });
+
+    check("Щит: ширина и подписи модулей", () => {
+      assert(panelModuleWidth({ type: "meter" }) === 4);
+      assert(panelModuleWidth({ type: "breaker1" }) === 1);
+      assert(panelModuleSpec(createPanelModule("breaker1", { rating: 16 })) === "Автомат 1P · C16");
+      assert(panelModuleSpec(createPanelModule("rcd2", { rating: 40, leakage: 30 })) === "УЗО 2P · 40 А · 30 мА");
+      const fallback = normalizePanel({ modules: [{ type: "unknown" }] });
+      assert(fallback.modules[0].type === "other");
+      return "1P, 4 модуля, безопасный импорт";
     });
 
     check("formatNumber", () => {

@@ -31,7 +31,6 @@ import {
   createId,
   getDeviceType,
   getOpeningType,
-  getSectionInfo,
   openingSpan,
   DEFAULT_SETTINGS
 } from "./model.js";

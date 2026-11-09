@@ -3,7 +3,7 @@
 // без сети — последняя сохранённая копия. Так обновления не «залипают».
 
 const CACHE_PREFIX = "electroplan-";
-const CACHE_NAME = `${CACHE_PREFIX}v1.1.0`;
+const CACHE_NAME = `${CACHE_PREFIX}v1.2.0`;
 
 const APP_SHELL = [
   "./",
@@ -22,6 +22,7 @@ const APP_SHELL = [
   "./js/summary.js",
   "./js/report.js",
   "./js/elevations.js",
+  "./js/panel.js",
   "./js/icons.js",
   "./icons/icon.svg",
   "./icons/icon-192.png",

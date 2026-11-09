@@ -4,6 +4,7 @@ import { summarizeProject } from "./calc.js";
 import { cableSpecLabel, cableColor, deviceTypeLabel } from "./model.js";
 import { formatNumber, pluralRu } from "./geometry.js";
 import { escapeHtml, icon } from "./icons.js";
+import { panelStats } from "./panel.js";
 
 export function sanitizeFilename(name) {
   return String(name || "ЭлектроПлан")
@@ -41,6 +42,52 @@ function routeRows(summary) {
       </tr>
     `;
   }).join("");
+}
+
+function panelSection(project) {
+  const stats = panelStats(project);
+  if (!stats.moduleCount) return "";
+  return `
+    <section class="report-section">
+      <div class="report-section-title">
+        <h2>Щит</h2>
+        <span>${stats.used} из ${stats.capacity} модулей · ${stats.panel.columns}×${stats.panel.rows}</span>
+      </div>
+      <table class="report-table report-table-compact">
+        <thead>
+          <tr>
+            <th>Аппарат</th>
+            <th>Цепи</th>
+            <th class="num">Кол-во</th>
+            <th class="num">Модулей</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${stats.bom.map((item) => `
+            <tr>
+              <td>${escapeHtml(item.label)}</td>
+              <td>${item.circuits.length ? escapeHtml(item.circuits.join(", ")) : "—"}</td>
+              <td class="num">${item.count} шт.</td>
+              <td class="num">${item.width}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Всего</td>
+            <td></td>
+            <td class="num">${stats.moduleCount} шт.</td>
+            <td class="num strong">${stats.used}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p class="report-note">
+        Свободно ${stats.free} модулей${stats.overflow ? `, не хватает ${stats.overflow}` : ""}.
+        Типы и номиналы аппаратов заданы вручную.
+        ${stats.missingRatings ? ` Без номинала: ${stats.missingRatings}.` : ""}
+      </p>
+    </section>
+  `;
 }
 
 function floorSection(entry, index) {
@@ -177,6 +224,8 @@ export function buildReportMarkup(project) {
         ${utpItems.length ? `<p class="report-note">Витая пара: ${formatNumber(utpTotal)} м. Категория и метраж учтены отдельно от силовых сечений.</p>` : ""}
       </section>
 
+      ${panelSection(project)}
+
       ${data.floors.map(floorSection).join("")}
 
       <section class="report-method">
@@ -249,6 +298,21 @@ export function buildCsv(project) {
       item.routes,
       formatNumber(item.total)
     ]);
+  }
+  const panel = panelStats(project);
+  if (panel.moduleCount) {
+    rows.push([]);
+    rows.push(["ЩИТ", panel.panel.name || "Щит"]);
+    rows.push(["Корпус", `${panel.capacity} модулей (${panel.panel.columns}×${panel.panel.rows})`, "Занято", panel.used, "Свободно", panel.free, "Не хватает", panel.overflow]);
+    rows.push(["Аппарат", "Цепи", "Кол-во", "Модулей"]);
+    for (const item of panel.bom) {
+      rows.push([
+        item.label,
+        item.circuits.join(", "),
+        item.count,
+        item.width
+      ]);
+    }
   }
   rows.push([]);
   rows.push(["ВСЕГО", "", "", "", "", "", "", "", "", formatNumber(data.totals.plan), formatNumber(data.totals.vertical + data.totals.slack), "", "", formatNumber(data.totals.total), ""]);

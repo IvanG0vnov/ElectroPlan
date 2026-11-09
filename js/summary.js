@@ -4,6 +4,7 @@ import { summarizeProject } from "./calc.js";
 import { cableSpecLabel, cableColor } from "./model.js";
 import { formatNumber, pluralRu } from "./geometry.js";
 import { escapeHtml, icon } from "./icons.js";
+import { panelStats } from "./panel.js";
 
 function sectionRows(data) {
   const total = data.totals.total || 1;
@@ -54,6 +55,7 @@ export function renderSummary(container, { project, floor, selection }) {
     .filter((item) => item.kind === "utp")
     .reduce((sum, item) => sum + item.total, 0);
   const powerTotal = Math.max(0, data.totals.total - utpTotal);
+  const panel = panelStats(project);
 
   container.innerHTML = `
     <div class="summary-panel">
@@ -69,6 +71,7 @@ export function renderSummary(container, { project, floor, selection }) {
           <button class="btn btn-light btn-sm" type="button" data-action="export-csv">${icon("download")} CSV</button>
           <button class="btn btn-accent btn-sm" type="button" data-action="open-report">${icon("report")} Отчёт PDF</button>
           <button class="btn btn-light btn-sm" type="button" data-action="open-elevations">${icon("elevation")} Развёртки</button>
+          <button class="btn btn-light btn-sm" type="button" data-action="open-panel">${icon("panel")} Щит</button>
         </div>
       </div>
 
@@ -101,6 +104,24 @@ export function renderSummary(container, { project, floor, selection }) {
             <div class="floor-totals">${floorRows(data)}</div>
           </section>
         ` : ""}
+
+        <section class="summary-section">
+          <div class="section-heading">
+            <h3>Щит</h3>
+            <span class="section-note">${panel.used} / ${panel.capacity} мод.</span>
+          </div>
+          <div class="panel-summary-row">
+            <div class="panel-summary-copy">
+              <strong>${escapeHtml(panel.panel.name || "Щит")}</strong>
+              <small>
+                ${panel.moduleCount} ${pluralRu(panel.moduleCount, "аппарат", "аппарата", "аппаратов")} ·
+                свободно ${panel.free} мод.
+                ${panel.overflow ? ` · не хватает ${panel.overflow}` : ""}
+              </small>
+            </div>
+            <button class="btn btn-soft btn-sm" type="button" data-action="open-panel">${icon("panel")} Открыть</button>
+          </div>
+        </section>
 
         <section class="summary-section">
           <div class="section-heading">
